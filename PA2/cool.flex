@@ -45,8 +45,19 @@ extern YYSTYPE cool_yylval;
  *  Add Your own definitions here
  */
 
+int cur_line_num = 1;
+
 int last;
 
+string table[10] = {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"};
+string to_string(int i) {    
+    string result = "";
+    while (i >= 10) {
+        result = table[i % 10] + result;
+        i /= 10;
+    }
+    return table[i] + result;
+}
 %}
 
 /*
@@ -109,6 +120,8 @@ EMPTY_SPACE    [ ]|[\t]|[\n]
 
 %%
 
+[\n]            { cur_line_num++; }
+
  /*
   *  Nested comments
   */
@@ -143,7 +156,10 @@ EMPTY_SPACE    [ ]|[\t]|[\n]
                     unsigned int len = strlen(yytext);
                     for (unsigned int i = 1; i < len - 1; i++) {//i in [1, len - 2]
                         if (yytext[i] == '\\') continue;
-                        if (yytext[i] == '\n') continue;
+                        if (yytext[i] == '\n') {
+                            cur_line_num++;
+                            continue;
+                        }
                         strtext += yytext[i];
                     }
                     char * ctext = new char[strtext.length()];
@@ -152,7 +168,10 @@ EMPTY_SPACE    [ ]|[\t]|[\n]
                     free(ctext);
                     return (last = STR_CONST);
                 }
-{UNTERM_STR}    { fatal_error("Unterminated string"); }
+{UNTERM_STR}    { 
+                    cool_yylval.error_msg = "Unterminated string"; 
+                    return (last = ERROR);
+                }
 
 
 {INT_CONST}     { 
@@ -187,8 +206,15 @@ EMPTY_SPACE    [ ]|[\t]|[\n]
                 }
 
 
-{COMMENT}        { }
-{UNTERM_COMMENT} { fatal_error("Unterminated comment"); }
+{COMMENT}        { 
+                     int len = strlen(yytext);
+                     for (int i = 0; i < len; i++)
+                         if (yytext[i] == '\n') cur_line_num++;
+                 }
+{UNTERM_COMMENT} { 
+                     cool_yylval.error_msg = "Unterminated comment";
+                     return (last = ERROR);
+                 }
 
 {SINGLE_CHAR}    { 
                      char c = yytext[0];
@@ -204,5 +230,15 @@ EMPTY_SPACE    [ ]|[\t]|[\n]
   *
   */
 
+.             {
+                  string error_msg_str = "line ";
+                  error_msg_str += to_string(cur_line_num);
+                  error_msg_str += ": syntax error at or near ERROR = ";
+                  error_msg_str += yytext;
+                  char * error_msg_c = new char[error_msg_str.length()];
+                  strcpy(error_msg_c, error_msg_str.c_str());
+                  cool_yylval.error_msg = error_msg_c;
+                  return (last = ERROR);
+              }
 
 %%
