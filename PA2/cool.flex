@@ -71,7 +71,7 @@ ASSIGN          <-
 IF              (if)
 THEN            (then)
 ELSE            (else)
-FI              (FI)
+FI              (fi)
 WHILE           (while)
 LOOP            (loop)
 POOL            (pool)
