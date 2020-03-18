@@ -45,7 +45,6 @@ extern YYSTYPE cool_yylval;
  *  Add Your own definitions here
  */
 
-int cur_line_num = 1;
 
 int last;
 
@@ -82,7 +81,8 @@ ESAC            (esac)
 OF              (of)
 LE              (le)
 NOT             (not)
-ISVOID          (void)
+ISVOID          (isvoid)
+NEW             (new)
 
 CLASS           (class)
 INHERITS        (inherits)
@@ -109,8 +109,8 @@ TYPEID          {UPPER_LETTER}({LETTER}|{DIGIT})*
 OBJECTID        {LETTER}({LETTER}|{DIGIT}|_)*
 
 /* comments */
-COMMENT        [(][*][^*]*[*]+([^*)][^*]*[*]+)*[)]
-UNTERM_COMMENT [(][*] 
+SL_COMMENT     [-][-](.)*
+OPEN_COMMENT        [(][*]
 
 /* single characters */
 SINGLE_CHAR    [+]|[/]|[-]|[*]|[=]|[<]|[.]|[~]|[,]|[;]|[:]|[(]|[)]|[@]|[{]|[}]
@@ -118,9 +118,12 @@ SINGLE_CHAR    [+]|[/]|[-]|[*]|[=]|[<]|[.]|[~]|[,]|[;]|[:]|[(]|[)]|[@]|[{]|[}]
 /* empty space */
 EMPTY_SPACE    [ ]|[\t]|[\n]
 
+NEW_LINE       [\n]
+EOF            (EOF)
+
 %%
 
-[\n]            { cur_line_num++; }
+[\n]            { curr_lineno++; }
 
  /*
   *  Nested comments
@@ -150,6 +153,7 @@ EMPTY_SPACE    [ ]|[\t]|[\n]
 {LE}            { return (last = LE); }
 {NOT}           { return (last = NOT); }
 {ISVOID}        { return (last = ISVOID); }
+{NEW}           { return (last = NEW); }
 
 {STR_CONST}     {
                     string strtext = "";
@@ -157,7 +161,7 @@ EMPTY_SPACE    [ ]|[\t]|[\n]
                     for (unsigned int i = 1; i < len - 1; i++) {//i in [1, len - 2]
                         if (yytext[i] == '\\') continue;
                         if (yytext[i] == '\n') {
-                            cur_line_num++;
+                            curr_lineno++;
                             continue;
                         }
                         strtext += yytext[i];
@@ -205,15 +209,25 @@ EMPTY_SPACE    [ ]|[\t]|[\n]
                     return (last = OBJECTID);
                 }
 
+{SL_COMMENT}     { }
 
-{COMMENT}        { 
-                     int len = strlen(yytext);
-                     for (int i = 0; i < len; i++)
-                         if (yytext[i] == '\n') cur_line_num++;
-                 }
-{UNTERM_COMMENT} { 
-                     cool_yylval.error_msg = "Unterminated comment";
-                     return (last = ERROR);
+
+{OPEN_COMMENT}   { 
+                     char c;
+                     while (1) {
+                         c = input();
+                     TEST_INPUT:
+                         if (c == EOF) {
+                             cool_yylval.error_msg = "Unterminated comment";
+                             return (last = ERROR);
+                         }
+                         if (c == '\n') curr_lineno++;
+                         if (c == '*') {
+                             c = input();
+                             if (c == ')') break;
+                             goto TEST_INPUT;
+                         }
+                     }
                  }
 
 {SINGLE_CHAR}    { 
@@ -231,13 +245,13 @@ EMPTY_SPACE    [ ]|[\t]|[\n]
   */
 
 .             {
-                  string error_msg_str = "line ";
-                  error_msg_str += to_string(cur_line_num);
-                  error_msg_str += ": syntax error at or near ERROR = ";
-                  error_msg_str += yytext;
-                  char * error_msg_c = new char[error_msg_str.length()];
-                  strcpy(error_msg_c, error_msg_str.c_str());
-                  cool_yylval.error_msg = error_msg_c;
+                  //string error_msg_str = "line ";
+                  //error_msg_str += to_string(cur_line_num);
+                  //error_msg_str += ": syntax error at or near ERROR = ";
+                  //error_msg_str += yytext;
+                  //char * error_msg_c = new char[error_msg_str.length()];
+                  //strcpy(error_msg_c, error_msg_str.c_str());
+                  cool_yylval.error_msg = yytext;//error_msg_c;
                   return (last = ERROR);
               }
 
