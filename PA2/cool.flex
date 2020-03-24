@@ -57,6 +57,7 @@ string to_string(int i) {
     }
     return table[i] + result;
 }
+
 %}
 
 /*
@@ -213,19 +214,28 @@ EOF            (EOF)
 
 
 {OPEN_COMMENT}   { 
+                     unsigned int left_comment_num = 1, right_comment_num = 0;
                      char c;
                      while (1) {
-                         c = input();
+                         c = yyinput();
                      TEST_INPUT:
                          if (c == EOF) {
                              cool_yylval.error_msg = "Unterminated comment";
                              return (last = ERROR);
                          }
                          if (c == '\n') curr_lineno++;
-                         if (c == '*') {
-                             c = input();
-                             if (c == ')') break;
-                             goto TEST_INPUT;
+                         else if (c == '(') {
+                             c = yyinput();
+                             if (c == '*') left_comment_num++;
+                             else goto TEST_INPUT;
+                         }
+                         else if (c == '*') {
+                             c = yyinput();
+                             if (c == ')') {
+                                 right_comment_num++;
+                                 if (right_comment_num == left_comment_num) break;
+                             }
+                             else goto TEST_INPUT;
                          }
                      }
                  }
