@@ -160,12 +160,20 @@ EOF            (EOF)
                     string strtext = "";
                     unsigned int len = strlen(yytext);
                     for (unsigned int i = 1; i < len - 1; i++) {//i in [1, len - 2]
-                        if (yytext[i] == '\\') continue;
-                        if (yytext[i] == '\n') {
+                        if (yytext[i] == '\\' && yytext[++i] == '\n') {
                             curr_lineno++;
+                            strtext += "\n";
                             continue;
                         }
+                        if (yytext[i] == '^' && yytext[++i] == '@') {
+                            cool_yylval.error_msg = "String contains null character";
+                            return (last = ERROR);
+                        }
                         strtext += yytext[i];
+                    }
+                    if (strtext.length() >= MAX_STR_CONST) {
+                        cool_yylval.error_msg = "String constant too long";
+                        return (last = ERROR);
                     }
                     char * ctext = new char[strtext.length()];
                     strcpy(ctext, strtext.c_str());
