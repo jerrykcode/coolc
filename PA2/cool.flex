@@ -45,7 +45,6 @@ extern YYSTYPE cool_yylval;
  *  Add Your own definitions here
  */
 
-
 int last;
 
 string table[10] = {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"};
@@ -68,36 +67,35 @@ DARROW          =>
 ASSIGN          <-
 
 /* key words */
-IF              (if)
-THEN            (then)
-ELSE            (else)
-FI              (fi)
-WHILE           (while)
-LOOP            (loop)
-POOL            (pool)
-LET             (let)
-IN              (in)
-CASE            (case)
-ESAC            (esac)
-OF              (of)
-LE              (le)
-NOT             (not)
-ISVOID          (isvoid)
-NEW             (new)
+IF              (?i:if)
+THEN            (?i:then)
+ELSE            (?i:else)
+FI              (?i:fi)
+WHILE           (?i:while)
+LOOP            (?i:loop)
+POOL            (?i:pool)
+LET             (?i:let)
+IN              (?i:in)
+CASE            (?i:case)
+ESAC            (?i:esac)
+OF              (?i:of)
+LE              (?i:le)
+NOT             (?i:not)
+ISVOID          (?i:isvoid)
+NEW             (?i:new)
 
-CLASS           (class)
-INHERITS        (inherits)
+CLASS           (?i:class)
+INHERITS        (?i:inherits)
 
 DIGIT           [0-9]
 
 
 /* const */
-STR_CONST       ["]([^"\n]|[\\\n])*["]
-UNTERM_STR      ["]([^"\n]|[\\\n])*
+OPEN_STR        ["]
+
 INT_CONST       {DIGIT}+
-BOOL_TRUE       (true)
-BOOL_FALSE      (false)
-BOOL_CONST      {BOOL_TRUE}|{BOOL_FALSE}
+BOOL_TRUE       (?i:true)
+BOOL_FALSE      (?i:false)
 
 
 /* TYPEID name of a class */
@@ -106,15 +104,19 @@ UPPER_LETTER    [A-Z]
 LETTER          [a-zA-Z]
 
 SELF_TYPE       (SELF_TYPE)
-TYPEID          {UPPER_LETTER}({LETTER}|{DIGIT})*
-OBJECTID        {LETTER}({LETTER}|{DIGIT}|_)*
+TYPEID          {UPPER_LETTER}({LETTER}|{DIGIT}|_)*
+OBJECTID        {LOWER_LETTER}({LETTER}|{DIGIT}|_)*
 
 /* comments */
 SL_COMMENT     [-][-](.)*
 OPEN_COMMENT        [(][*]
+CLOSE_COMMENT       [*][)]
 
 /* single characters */
 SINGLE_CHAR    [+]|[/]|[-]|[*]|[=]|[<]|[.]|[~]|[,]|[;]|[:]|[(]|[)]|[@]|[{]|[}]
+
+/* <=  */
+L_E             <=
 
 /* empty space */
 EMPTY_SPACE    [ ]|[\t]|[\n]
@@ -155,37 +157,56 @@ EOF            (EOF)
 {NOT}           { return (last = NOT); }
 {ISVOID}        { return (last = ISVOID); }
 {NEW}           { return (last = NEW); }
+{CLASS}         { return (last = CLASS); }
+{INHERITS}      { return (last = INHERITS); }
 
-{STR_CONST}     {
+
+{OPEN_STR}     {
                     string strtext = "";
-                    unsigned int len = strlen(yytext);
-                    for (unsigned int i = 1; i < len - 1; i++) {//i in [1, len - 2]
-                        if (yytext[i] == '\\' && yytext[++i] == '\n') {
-                            curr_lineno++;
-                            strtext += "\n";
+                    char c, d;
+                    while (1) {
+//                        std::cout << strtext << std::endl;
+                        c = yyinput();
+//std::cout<<"input char: "<<c<<endl;
+                        if (c == '\"') {
+                            break;
+                        }
+                        if (c == '\\') {
+//std::cout<<"ok"<<endl;
+                            d = yyinput();
+//std::cout<<"input char: "<<d<<endl;
+                            if (d == '\n') {
+                                curr_lineno++;
+                                strtext += "\n";
+//std::cout<<"why"<<endl;
+                                continue;
+                            }
+                            if (d == 'n') strtext += "\n";
                             continue;
                         }
-                        if (yytext[i] == '^' && yytext[++i] == '@') {
-                            cool_yylval.error_msg = "String contains null character";
+                        if (c == EOF) {
+                            cool_yylval.error_msg = "Unterminated string constant"; 
                             return (last = ERROR);
                         }
-                        strtext += yytext[i];
+                        if (c == '\n') {
+                            cool_yylval.error_msg = "Unterminated string constant";
+                            
+                            return (last = ERROR);
+                        }
+                        strtext += c;
                     }
                     if (strtext.length() >= MAX_STR_CONST) {
                         cool_yylval.error_msg = "String constant too long";
                         return (last = ERROR);
                     }
-                    char * ctext = new char[strtext.length()];
+                    unsigned int len = strtext.length();
+                    char * ctext = new char[len];
                     strcpy(ctext, strtext.c_str());
-                    cool_yylval.symbol = new Entry(ctext, yyleng, 0);
+//                    printf("%s\n", ctext);
+                    cool_yylval.symbol = new Entry(ctext, len, 0);
                     free(ctext);
                     return (last = STR_CONST);
                 }
-{UNTERM_STR}    { 
-                    cool_yylval.error_msg = "Unterminated string"; 
-                    return (last = ERROR);
-                }
-
 
 {INT_CONST}     { 
 
@@ -194,14 +215,16 @@ EOF            (EOF)
                 }
 
 
-{BOOL_CONST}    {
-                    cool_yylval.symbol = new Entry(yytext, yyleng, 0);
+{BOOL_TRUE}     {
+                    cool_yylval.boolean = true;
                     return (last = BOOL_CONST);
                 }
 
+{BOOL_FALSE}    {
+                    cool_yylval.boolean = false;
+                    return (last = BOOL_CONST);
+                }
 
-{CLASS}         { return (last = CLASS); }
-{INHERITS}      { return (last = INHERITS); }
 
 {TYPEID}        { 
                         cool_yylval.symbol = new Entry(yytext, yyleng, 0); 
@@ -228,7 +251,7 @@ EOF            (EOF)
                          c = yyinput();
                      TEST_INPUT:
                          if (c == EOF) {
-                             cool_yylval.error_msg = "Unterminated comment";
+                             cool_yylval.error_msg = "EOF in comment";
                              return (last = ERROR);
                          }
                          if (c == '\n') curr_lineno++;
@@ -247,11 +270,18 @@ EOF            (EOF)
                          }
                      }
                  }
+{CLOSE_COMMENT}  { 
+                     cool_yylval.error_msg = "Unmatched *)"; 
+                     return (last = ERROR);
+                 }
+
 
 {SINGLE_CHAR}    { 
                      char c = yytext[0];
                      return (last = c);
                  }
+
+{L_E}             { return (last = LE); }
 
 {EMPTY_SPACE}    { }
 
