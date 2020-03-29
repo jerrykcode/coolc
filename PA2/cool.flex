@@ -184,7 +184,22 @@ EOF            (EOF)
                                 strtext += "\n";
                                 break;
                             }
-                            default : break;
+                            case 't' : {
+                                strtext += "\t";
+                                break;
+                            }
+                            case 'b' : {
+                                strtext += "\b";
+                                break;
+                            }
+                            case 'f' : {
+                                strtext += "\f";
+                                break;
+                            }
+                            default : {
+                                strtext += d;
+                                break;
+                            }
                             } //switch
                             continue;
                         }
