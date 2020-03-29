@@ -91,9 +91,7 @@ DIGIT           [0-9]
 
 
 /* const */
-STR_CONST       ["]([^"])*["]
-UNTERM_STR      ["]([^"])*
-
+OPEN_STR        ["]
 
 INT_CONST       {DIGIT}+
 BOOL_TRUE       (?i:true)
@@ -163,36 +161,32 @@ EOF            (EOF)
 {INHERITS}      { return (last = INHERITS); }
 
 
-{STR_CONST}     {
-//std::cout << "string" <<endl;
+{OPEN_STR}     {
                     string strtext = "";
                     char c, d;
-                    for (int i = 1; i < yyleng - 1; i++) { //i in[1, yyleng - 2]
-//                        std::cout << strtext << std::endl;
-                        c = yytext[i];
-//std::cout<<"input char: "<<c<<endl;
-                        if (c == '\\') {
-//std::cout<<"ok"<<endl;
-                            d = yytext[++i];
-//std::cout<<"input char: "<<d<<endl;
-                            if (d == '\n') {
-                                curr_lineno++;
-                                strtext += "\n";
-//std::cout<<"why"<<endl;
-                                continue;
-                            }
-                            if (d == 'n') strtext += "\n";
-                            continue;
-                        }
-                        if (c == '\n') {
+                    while (1) {
+                        c = yyinput();
+                        if (c == '\"') break;
+                        if (c == EOF || c == '\n') {
                             cool_yylval.error_msg = "Unterminated string constant";
-                            curr_lineno++;
-                            i++;
-                            while (i < yyleng - 2) {
-                                if (yytext[i] == '\n') curr_lineno++;
-                                i++;
-                            }
+                            if (c == '\n') curr_lineno++;
                             return (last = ERROR);
+                        }
+                        if (c == '\\') {
+                            d = yyinput();
+                            switch (d) {
+                            case '\n' : {
+                                strtext += "\n";
+                                curr_lineno++;
+                                break;
+                            }
+                            case 'n' : {
+                                strtext += "\n";
+                                break;
+                            }
+                            default : break;
+                            } //switch
+                            continue;
                         }
                         strtext += c;
                     }
@@ -207,15 +201,6 @@ EOF            (EOF)
                     cool_yylval.symbol = new Entry(ctext, len, 0);
                     free(ctext);
                     return (last = STR_CONST);
-                }
-
-{UNTERM_STR}    {
-//std::cout << "unterm string" <<endl;
-//std::cout << yytext << endl;
-                    cool_yylval.error_msg = "Unterminated string constant";
-                    for (int i = 1; i < yyleng; i++)
-                        if (yytext[i] == '\n') curr_lineno++;
-                    return (last = ERROR);
                 }
 
 
