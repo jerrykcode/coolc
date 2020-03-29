@@ -59,6 +59,8 @@ string to_string(int i) {
 
 %}
 
+SPACE         [ \t\r\a\f\013]+
+
 /*
  * Define names for regular expressions here.
  */
@@ -94,8 +96,10 @@ DIGIT           [0-9]
 OPEN_STR        ["]
 
 INT_CONST       {DIGIT}+
-BOOL_TRUE       (?i:true)
-BOOL_FALSE      (?i:false)
+BOOL_TRUE_SUFFIX (?i:rue)
+BOOL_FALSE_SUFFIX (?i:alse)
+BOOL_TRUE       (t{BOOL_TRUE_SUFFIX})
+BOOL_FALSE      (f{BOOL_FALSE_SUFFIX})
 
 
 /* TYPEID name of a class */
@@ -127,7 +131,8 @@ EOF            (EOF)
 %%
 
 [\n]            { curr_lineno++; }
-
+{SPACE}         { /* ignore all spaces*/ }
+ 
  /*
   *  Nested comments
   */
@@ -210,7 +215,7 @@ EOF            (EOF)
                         return (last = ERROR);
                     }
                     unsigned int len = strtext.length();
-                    char * ctext = new char[len];
+                    char * ctext = (char *)malloc((len + 16) * sizeof(char));
                     strcpy(ctext, strtext.c_str());
 //                   printf("%s\n", ctext);
                     cool_yylval.symbol = new Entry(ctext, len, 0);
