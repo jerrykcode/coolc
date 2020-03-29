@@ -172,6 +172,16 @@ EOF            (EOF)
                     while (1) {
                         c = yyinput();
                         if (c == '\"') break;
+                        if (c == '\0') {
+                            cool_yylval.error_msg = "String contains null character";
+                            while (1) {
+                                d = yyinput();
+                                if (d == '\"' || d == EOF) break;
+                                if (d == '\n') { curr_lineno++; break; }
+                                if (d == '\\' && yyinput() == '\n') continue;
+                            }
+                            return (last = ERROR);
+                        }
                         if (c == EOF || c == '\n') {
                             cool_yylval.error_msg = "Unterminated string constant";
                             if (c == '\n') curr_lineno++;
@@ -200,6 +210,16 @@ EOF            (EOF)
                             case 'f' : {
                                 strtext += "\f";
                                 break;
+                            }
+                            case '\0' : {
+                                cool_yylval.error_msg = "String contains escaped null character";
+                                while (1) {
+                                    d = yyinput();
+                                    if (d == '\"' || d == EOF) break;
+                                    if (d == '\n') { curr_lineno++; break; }
+                                    if (d == '\\' && yyinput() == '\n') continue;
+                                }
+                                return (last = ERROR);
                             }
                             default : {
                                 strtext += d;
