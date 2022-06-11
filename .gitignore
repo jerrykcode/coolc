@@ -1,6 +1,3 @@
-PA1J*/
-PA2J*/
-PA3J*/
-PA4J*/
-PA5J*/
 *.d
+*.o
+assignments/**/grading
