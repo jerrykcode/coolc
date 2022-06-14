@@ -134,8 +134,41 @@
     %type <classes> class_list
     %type <class_> class
     
-    /* You will want to change the following line. */
     %type <features> dummy_feature_list
+    %type <feature> feature
+    %type <feature> method
+    %type <feature> attr
+    
+    %type <formals> formals
+    %type <formals> formals_without_last
+    %type <formal> formal
+    
+    %type <expressions> expressions
+    %type <expression> expression
+    %type <expression> no_expr
+    %type <expression> assign
+    %type <expression> cond
+    %type <expression> loop
+    %type <expression> block
+    %type <expression> let
+    %type <expression> typcase
+    %type <expression> plus
+    %type <expression> sub
+    %type <expression> mul
+    %type <expression> divide
+    %type <expression> neg
+    %type <expression> lt
+    %type <expression> eq
+    %type <expression> leq
+    %type <expression> int_const
+    %type <expression> bool_const
+    %type <expression> str_const
+    %type <expression> new
+    %type <expression> isvoid
+    %type <expression> object
+
+    %type <cases> cases
+    %type <case_> branch
     
     /* Precedence declarations go here. */
     
@@ -166,9 +199,194 @@
     
     /* Feature list may be empty, but no empty features in list. */
     dummy_feature_list:		/* empty */
-    {  $$ = nil_Features(); }
-    
-    
+    { $$ = nil_Features(); }
+    | feature               /* single feature */
+    { $$ = single_Features($1); }
+    | dummy_feature_list feature
+    { $$ = append_Features($1, single_Features($2)); }
+    ;
+
+    feature: method
+    { $$ = $1; }
+    | attr
+    { $$ = $1; }
+    ;
+
+    method: OBJECTID '('formals')' ':' TYPEID '{' expression '}' ';'
+    { $$ = method($1, $3, $6, $8); }
+    ;
+
+    attr: OBJECTID ':' TYPEID ';'
+    { $$ = attr($1, $3, no_expr()); }
+    | OBJECTID ':' TYPEID ASSIGN expression ';'
+    { $$ = attr($1, $3, $5); }
+    ;
+   
+    formals:        /* empty */
+    { $$ = nil_Formals(); }
+    | formal
+    { $$ = single_Formals($1); }
+    | formals_without_last ',' formal
+    { $$ = append_Formals($1, single_Formals($3)); }
+    ;
+    formals_without_last: formal
+    { $$ = single_Formals($1); }
+    | formals_without_last ',' formal
+    { $$ = append_Formals($1, single_Formals($3)); }
+    ;
+
+    formal: OBJECTID ':' TYPEID
+    { $$ = formal($1, $3); }
+    ;
+
+    expressions:    /* empty */
+    { $$ = nil_Expressions(); }
+    | expression ';'
+    { $$ = single_Expressions($1); }
+    | expressions expression ';'
+    { $$ = append_Expressions($1, single_Expressions($2)); }
+    ;
+
+    expression: no_expr
+    { $$ = $1; }
+    | assign
+    { $$ = $1; }
+    | cond
+    { $$ = $1; }
+    | loop
+    { $$ = $1; }
+    | block
+    { $$ = $1; }
+    | let
+    { $$ = $1; }
+    | typcase
+    { $$ = $1; }
+    | plus
+    { $$ = $1; }
+    | sub
+    { $$ = $1; }
+    | mul
+    { $$ = $1; }
+    | divide
+    { $$ = $1; }
+    | neg
+    { $$ = $1; }
+    | lt
+    { $$ = $1; }
+    | eq
+    { $$ = $1; }
+    | leq
+    { $$ = $1; }
+    | int_const
+    { $$ = $1; }
+    | bool_const
+    { $$ = $1; }
+    | str_const
+    { $$ = $1; }
+    | new
+    { $$ = $1; }
+    | isvoid
+    { $$ = $1; }
+    | object
+    { $$ = $1; }
+    ;
+
+    no_expr:    /* no expression, empty */
+    { $$ = no_expr(); }
+    ;
+
+    assign: OBJECTID ASSIGN expression
+    { $$ = assign($1, $3); }
+    ;
+
+    cond: IF expression THEN expression FI
+    { $$ = cond($2, $4, no_expr()); }
+    | IF expression THEN expression ELSE expression FI
+    { $$ = cond($2, $4, $6); }
+    ;
+
+    loop: WHILE expression LOOP expression POOL
+    { $$ = loop($2, $4); }
+    ;
+
+    block: '{' expressions '}'
+    { $$ = block($2); }
+    ;
+
+    let: '(' LET OBJECTID ':' TYPEID ASSIGN expression IN expression ')'
+    { $$ = let($3, $5, $7, $9); }
+    ;
+
+    typcase: CASE expression OF cases ESAC
+    { $$ = typcase($2, $4); }
+    ;
+
+    cases: branch
+    { $$ = single_Cases($1); }
+    | cases branch
+    { $$ = append_Cases($1, single_Cases($2)); }
+    ;
+
+    branch: OBJECTID ':' TYPEID DARROW expression ';'
+    { $$ = branch($1, $3, $5); }
+    ;
+
+    plus: expression '+' expression
+    { $$ = plus($1, $3); }
+    ;
+
+    sub: expression '-' expression
+    { $$ = sub($1, $3); }
+    ;
+
+    mul: expression '*' expression
+    { $$ = mul($1, $3); }
+    ;
+
+    divide: expression '/' expression
+    { $$ = divide($1, $3); }
+    ;
+
+    neg: '-' expression
+    { $$ = neg($2); }
+    ;
+
+    lt: expression '<' expression
+    { $$ = lt($1, $3); }
+    ;
+
+    eq: expression '=' expression
+    { $$ = eq($1, $3); }
+    ;
+
+    leq: expression LE expression
+    { $$ = leq($1, $3); }
+    ;
+
+    int_const: INT_CONST
+    { $$ = int_const($1); }
+    ;
+
+    bool_const: BOOL_CONST
+    { $$ = bool_const($1); }
+
+    str_const: STR_CONST
+    { $$ = string_const($1); }
+    ; 
+
+    new: NEW TYPEID
+    { $$ = new_($2); }
+    ;
+
+    isvoid: ISVOID expression
+    { $$ = isvoid($2); }
+    ;
+
+    object: OBJECTID
+    { $$ = object($1); }
+    ;
+
+
     /* end of grammar */
     %%
     

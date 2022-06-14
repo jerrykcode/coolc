@@ -37,8 +37,8 @@ lsource: ${LSRC}
 
 ${OUTPUT}:	parser good.cl bad.cl
 	@rm -f ${OUTPUT}
-	./myparser good.cl >good.output 2>&1 
-	-./myparser bad.cl >bad.output 2>&1 
+	sh myparser good.cl >good.output 2>&1 
+	-sh myparser bad.cl >bad.output 2>&1 
 
 parser: ${OBJS}
 	${CC} ${CFLAGS} ${OBJS} ${LIB} -o parser
@@ -52,9 +52,9 @@ cool-parse.cc cool-parse.h: cool.y
 
 dotest:	parser good.cl bad.cl
 	@echo "\nRunning parser on good.cl\n"
-	-./myparser good.cl 
+	-sh myparser good.cl 
 	@echo "\nRunning parser on bad.cl\n"
-	-./myparser bad.cl
+	-sh myparser bad.cl
 
 ${LIBS}:
 	${CLASSDIR}/etc/link-object ${ASSN} $@
