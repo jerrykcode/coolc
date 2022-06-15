@@ -144,13 +144,19 @@
     %type <formal> formal
     
     %type <expressions> expressions
+    %type <expressions> block_expressions
+    %type <expressions> dispatch_expressions
+
     %type <expression> expression
     %type <expression> no_expr
     %type <expression> assign
+    %type <expression> dispatch
+    %type <expression> static_dispatch
     %type <expression> cond
     %type <expression> loop
     %type <expression> block
     %type <expression> let
+    %type <expression> next_let
     %type <expression> typcase
     %type <expression> plus
     %type <expression> sub
@@ -166,6 +172,7 @@
     %type <expression> new
     %type <expression> isvoid
     %type <expression> object
+    %type <expression> comp 
 
     %type <cases> cases
     %type <case_> branch
@@ -195,6 +202,8 @@
     stringtable.add_string(curr_filename)); }
     | CLASS TYPEID INHERITS TYPEID '{' dummy_feature_list '}' ';'
     { $$ = class_($2,$4,$6,stringtable.add_string(curr_filename)); }
+    | CLASS error '{'dummy_feature_list '}' ';'
+    | CLASS error INHERITS TYPEID '{' dummy_feature_list '}' ';'
     ;
     
     /* Feature list may be empty, but no empty features in list. */
@@ -241,15 +250,31 @@
 
     expressions:    /* empty */
     { $$ = nil_Expressions(); }
-    | expression ';'
+    | block_expressions /* expressions for block */
+    { $$ = $1; }
+    | dispatch_expressions   /* expressions for dispatch(arguments when calling a method) */
+    { $$ = $1; }
+    ;
+
+    block_expressions: expression ';'
     { $$ = single_Expressions($1); }
-    | expressions expression ';'
+    | block_expressions expression ';'
     { $$ = append_Expressions($1, single_Expressions($2)); }
+    ;
+
+    dispatch_expressions: expression
+    { $$ = single_Expressions($1); }
+    | dispatch_expressions ',' expression
+    { $$ = append_Expressions($1, single_Expressions($3)); }
     ;
 
     expression: no_expr
     { $$ = $1; }
     | assign
+    { $$ = $1; }
+    | dispatch
+    { $$ = $1; }
+    | static_dispatch
     { $$ = $1; }
     | cond
     { $$ = $1; }
@@ -289,6 +314,10 @@
     { $$ = $1; }
     | object
     { $$ = $1; }
+    | comp 
+    { $$ = $1; }
+    | '(' expression ')'   /* parentheses */
+    { $$ = $2; }
     ;
 
     no_expr:    /* no expression, empty */
@@ -297,6 +326,19 @@
 
     assign: OBJECTID ASSIGN expression
     { $$ = assign($1, $3); }
+    ;
+
+    dispatch: expression '.' OBJECTID '(' expressions ')'
+    { $$ = dispatch($1, $3, $5); }
+    | OBJECTID '(' expressions ')'
+    { int len = strlen("self");
+      char *SELF = (char *)malloc((len + 1)*sizeof(char));
+      strcpy(SELF, "self"); SELF[len] = '\0';
+      $$ = dispatch(object(new Entry(SELF, len, OBJECTID)), $1, $3); }
+    ;
+
+    static_dispatch: expression '@' TYPEID '.'OBJECTID '(' expressions ')'
+    { $$ = static_dispatch($1, $3, $5, $7); }
     ;
 
     cond: IF expression THEN expression FI
@@ -313,8 +355,18 @@
     { $$ = block($2); }
     ;
 
-    let: '(' LET OBJECTID ':' TYPEID ASSIGN expression IN expression ')'
-    { $$ = let($3, $5, $7, $9); }
+    let: LET next_let
+    { $$ = $2; }
+    ;
+
+    next_let: OBJECTID ':' TYPEID ASSIGN expression IN expression
+    { $$ = let($1, $3, $5, $7); }
+    | OBJECTID ':' TYPEID IN expression
+    { $$ = let($1, $3, no_expr(), $5); }
+    | OBJECTID ':' TYPEID ASSIGN expression ',' next_let
+    { $$ = let($1, $3, $5, $7); }
+    | OBJECTID ':' TYPEID ',' next_let
+    { $$ = let($1, $3, no_expr(), $5); }
     ;
 
     typcase: CASE expression OF cases ESAC
@@ -347,7 +399,7 @@
     { $$ = divide($1, $3); }
     ;
 
-    neg: '-' expression
+    neg: '~' expression
     { $$ = neg($2); }
     ;
 
@@ -386,6 +438,9 @@
     { $$ = object($1); }
     ;
 
+    comp: NOT expression
+    { $$ = comp($2); }
+    ;
 
     /* end of grammar */
     %%
