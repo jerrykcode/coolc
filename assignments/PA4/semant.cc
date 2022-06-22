@@ -5,7 +5,8 @@
 #include <stdarg.h>
 #include "semant.h"
 #include "utilities.h"
-
+#include <map>
+#include <queue>
 
 extern int semant_debug;
 extern char *curr_filename;
@@ -84,9 +85,7 @@ static void initialize_constants(void)
 
 
 ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) {
-
-    /* Fill this in */
-
+    install_basic_classes();
 }
 
 void ClassTable::install_basic_classes() {
@@ -123,6 +122,8 @@ void ClassTable::install_basic_classes() {
 			       single_Features(method(copy, nil_Formals(), SELF_TYPE, no_expr()))),
 	       filename);
 
+    basic_classes.push_back(Object_class);
+
     // 
     // The IO class inherits from Object. Its methods are
     //        out_string(Str) : SELF_TYPE       writes a string to the output
@@ -144,6 +145,8 @@ void ClassTable::install_basic_classes() {
 			       single_Features(method(in_int, nil_Formals(), Int, no_expr()))),
 	       filename);  
 
+    basic_classes.push_back(IO_class);
+
     //
     // The Int class has no methods and only a single attribute, the
     // "val" for the integer. 
@@ -154,11 +157,15 @@ void ClassTable::install_basic_classes() {
 	       single_Features(attr(val, prim_slot, no_expr())),
 	       filename);
 
+    basic_classes.push_back(Int_class);
+
     //
     // Bool also has only the "val" slot.
     //
     Class_ Bool_class =
 	class_(Bool, Object, single_Features(attr(val, prim_slot, no_expr())),filename);
+
+    basic_classes.push_back(Bool_class);
 
     //
     // The class Str has a number of slots and operations:
@@ -188,6 +195,8 @@ void ClassTable::install_basic_classes() {
 						      Str, 
 						      no_expr()))),
 	       filename);
+
+    basic_classes.push_back(Str_class);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -245,11 +254,88 @@ void program_class::semant()
     ClassTable *classtable = new ClassTable(classes);
 
     /* some semantic analysis code may go here */
+    // assignment PA4
 
+    if (!classtable->check_inheritance(classes))
+        goto ERROR;
+
+ERROR:
     if (classtable->errors()) {
 	cerr << "Compilation halted due to static semantic errors." << endl;
 	exit(1);
     }
 }
 
+bool ClassTable::check_inheritance(Classes classes) {
+    std::vector<Class_> all_classes(basic_classes); //copy
+    for (int i = classes->first(); classes->more(i); i = classes->next(i))
+        all_classes.push_back(classes->nth(i));
+    InheritanceChecker *ic = new GraphInheritanceChecker();
+    bool result = true;
+    if (!ic->check(all_classes)) {
+        result = false;
+        semant_errors++;
+        cerr << "Inheritance Error!~~" << endl;
+    }
+    delete ic;
+    std::vector<Class_>().swap(all_classes);
+    return result;
+}
 
+bool GraphInheritanceChecker::check(std::vector<Class_> all_classes) {
+    int cnt = 0;
+    std::map<Symbol, int> class2id;
+    for (int i = 0; i < all_classes.size(); i++) {
+        Class_ class_ = all_classes[i];
+        // mapping from Class_ to id
+        if (class2id.find(class_->get_name()) == class2id.end()) 
+           class2id[class_->get_name()] = cnt++;
+    }
+    int num_vertices = cnt;
+    std::vector<int> *graph = new std::vector<int>[num_vertices];
+    int *indegree = new int[num_vertices];
+    memset(indegree, 0, sizeof(int)*num_vertices);
+    // Insert edges
+    for (int i = 0; i < all_classes.size(); i++) {
+        Class_ class_ = all_classes[i];
+        int class_id = class2id[class_->get_name()];
+        int parent_id = class2id[class_->get_parent()];
+        if (class_id != parent_id) {
+            graph[class_id].push_back(parent_id);
+            indegree[parent_id]++;
+        }
+    }
+    // top sort
+    std::queue<int> qq;
+    cnt = 0;
+    for (int v = 0; v < num_vertices; v++) {
+        if (indegree[v] == 0) {
+            qq.push(v);
+            cnt++;
+        }
+    }
+    while (!qq.empty()) {
+        int v = qq.front();
+        qq.pop();
+        for (int i = 0; i < graph[v].size(); i++) {
+            int w = graph[v][i];
+            if (--indegree[w] == 0) {
+                qq.push(w);
+                cnt++;
+            }
+        }
+    }
+    std::map<Symbol, int>().swap(class2id);
+    for (int v = 0; v < num_vertices; v++)
+        std::vector<int>().swap(graph[v]);
+    delete indegree;
+    return cnt == num_vertices;
+}
+
+Symbol class__class::get_name() {
+    return name;
+}
+
+Symbol class__class::get_parent() {
+    return parent;
+}

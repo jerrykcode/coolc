@@ -15,3 +15,15 @@ Class Main {
 	  (new C).init(1,true)
 	};
 };
+
+class D inherits C {
+
+};
+
+class E inherits C {
+
+};
+
+class F inherits D {
+
+};

@@ -7,6 +7,7 @@
 #include "stringtab.h"
 #include "symtab.h"
 #include "list.h"
+#include <vector>
 
 #define TRUE 1
 #define FALSE 0
@@ -24,15 +25,28 @@ private:
   int semant_errors;
   void install_basic_classes();
   ostream& error_stream;
+  std::vector<Class_> basic_classes;
 
 public:
   ClassTable(Classes);
+  bool check_inheritance(Classes);
   int errors() { return semant_errors; }
   ostream& semant_error();
   ostream& semant_error(Class_ c);
   ostream& semant_error(Symbol filename, tree_node *t);
 };
 
+class InheritanceChecker {
+public:
+  virtual bool check(std::vector<Class_> all_classes) = 0;
+};
+
+class GraphInheritanceChecker : public InheritanceChecker {
+public:
+  virtual bool check(std::vector<Class_> all_classes);
+  GraphInheritanceChecker() {}
+  ~GraphInheritanceChecker() {}
+};
 
 #endif
 
