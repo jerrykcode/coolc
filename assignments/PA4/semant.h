@@ -7,7 +7,6 @@
 #include "stringtab.h"
 #include "symtab.h"
 #include "list.h"
-#include <vector>
 
 #define TRUE 1
 #define FALSE 0
@@ -30,6 +29,7 @@ private:
 public:
   ClassTable(Classes);
   bool check_inheritance(Classes);
+  Environment *init_methods_info(Classes classes);
   int errors() { return semant_errors; }
   ostream& semant_error();
   ostream& semant_error(Class_ c);
@@ -47,6 +47,7 @@ public:
   GraphInheritanceChecker() {}
   ~GraphInheritanceChecker() {}
 };
+
 
 #endif
 

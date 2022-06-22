@@ -11,7 +11,82 @@
 
 #include "tree.h"
 #include "cool-tree.handcode.h"
+#include <vector>
 
+// Symbol table
+typedef struct MethodTypes {
+    std::vector<Symbol> formal_types;
+    Symbol return_type;
+    ~MethodTypes() {
+        std::vector<Symbol>().swap(formal_types);
+    }
+}*PMethodTypes;
+
+class Environment {
+public:
+  virtual int push_var(Symbol name, Symbol type) = 0; // return an id for <name, type>
+  virtual Symbol find_var_type(Symbol name) = 0;
+  virtual int push_method(Symbol class_name, Symbol method_name, PMethodTypes) = 0;
+  virtual PMethodTypes find_method_type(Symbol class_name, Symbol method_name) = 0;
+  virtual int pop() = 0;
+  virtual ~Environment() {}
+};
+
+class SymbolTableEnvironment : public Environment {
+public:
+  SymbolTableEnvironment();
+  ~SymbolTableEnvironment();
+  int push_var(Symbol name, Symbol type); // return an id for <name, type>
+  Symbol find_var_type(Symbol name);
+  int push_method(Symbol class_name, Symbol method_name, PMethodTypes);
+  PMethodTypes find_method_type(Symbol class_name, Symbol method_name);
+  int pop();
+  void print_elements();
+
+private:
+
+  class Elem {
+  public:
+    virtual bool is_var() = 0;
+    virtual bool is_method() = 0;
+    virtual ~Elem() {}
+  };
+
+  class VarElem : public Elem {
+  public:
+    ~VarElem() {}
+    bool is_var() { return true; }
+    bool is_method() { return false; }
+    VarElem(Symbol name, Symbol type) : name(name), type(type) {}
+    Symbol get_name() { return name; }
+    Symbol get_type() { return type; }
+  private:
+    Symbol name;
+    Symbol type;
+  };
+
+  class MethodElem : public Elem {
+  public:
+    bool is_var() { return false; }
+    bool is_method() { return true; }
+    MethodElem(Symbol class_name, Symbol method_name, PMethodTypes types)
+      : class_name(class_name), method_name(method_name), method_types(types) {}
+    ~MethodElem() {
+        delete method_types;
+    }
+    Symbol get_class_name() { return class_name; }
+    Symbol get_method_name() { return method_name; }
+    PMethodTypes get_method_types() { return method_types; }
+
+  private:
+    Symbol class_name;
+    Symbol method_name;
+    PMethodTypes method_types;
+  };
+
+  typedef Elem *PElem;
+  std::vector<PElem> elements;
+};
 
 // define the class for phylum
 // define simple phylum - Program
@@ -37,6 +112,7 @@ public:
    virtual Class_ copy_Class_() = 0;
    virtual Symbol get_name() = 0;
    virtual Symbol get_parent() = 0;
+   virtual void init_methods_info(Environment *environment) = 0;
 
 #ifdef Class__EXTRAS
    Class__EXTRAS
@@ -51,6 +127,8 @@ class Feature_class : public tree_node {
 public:
    tree_node *copy()		 { return copy_Feature(); }
    virtual Feature copy_Feature() = 0;
+   virtual bool is_attribute() = 0;
+   virtual bool is_method() = 0;
 
 #ifdef Feature_EXTRAS
    Feature_EXTRAS
@@ -65,6 +143,7 @@ class Formal_class : public tree_node {
 public:
    tree_node *copy()		 { return copy_Formal(); }
    virtual Formal copy_Formal() = 0;
+   virtual void add_type(std::vector<Symbol>& types) = 0;
 
 #ifdef Formal_EXTRAS
    Formal_EXTRAS
@@ -165,6 +244,7 @@ public:
    void dump(ostream& stream, int n);
    Symbol get_name();
    Symbol get_parent();
+   void init_methods_info(Environment *environment);
 
 #ifdef Class__SHARED_EXTRAS
    Class__SHARED_EXTRAS
@@ -191,6 +271,9 @@ public:
    }
    Feature copy_Feature();
    void dump(ostream& stream, int n);
+   bool is_attribute();
+   bool is_method();
+   void init_info(Environment *environment, Symbol class_name);
 
 #ifdef Feature_SHARED_EXTRAS
    Feature_SHARED_EXTRAS
@@ -215,6 +298,8 @@ public:
    }
    Feature copy_Feature();
    void dump(ostream& stream, int n);
+   bool is_attribute();
+   bool is_method();
 
 #ifdef Feature_SHARED_EXTRAS
    Feature_SHARED_EXTRAS
@@ -237,6 +322,7 @@ public:
    }
    Formal copy_Formal();
    void dump(ostream& stream, int n);
+   void add_type(std::vector<Symbol>& types);
 
 #ifdef Formal_SHARED_EXTRAS
    Formal_SHARED_EXTRAS

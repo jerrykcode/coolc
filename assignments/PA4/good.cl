@@ -17,6 +17,19 @@ Class Main {
 };
 
 class D inherits C {
+    f1(c:C, d:D): D {
+        
+    };
+    
+    f2(): D {
+
+    };
+
+    f3() : Bool {
+
+    };
+
+    f4(x:Int, c: C, d:D, o:Object) : Object {};
 
 };
 

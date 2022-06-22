@@ -256,10 +256,11 @@ void program_class::semant()
     /* some semantic analysis code may go here */
     // assignment PA4
 
-    if (!classtable->check_inheritance(classes))
-        goto ERROR;
+    if (classtable->check_inheritance(classes)) {
+        Environment *environment = classtable->init_methods_info(classes);
+        ((SymbolTableEnvironment *)environment)->print_elements();
+    }
 
-ERROR:
     if (classtable->errors()) {
 	cerr << "Compilation halted due to static semantic errors." << endl;
 	exit(1);
@@ -338,4 +339,112 @@ Symbol class__class::get_name() {
 
 Symbol class__class::get_parent() {
     return parent;
+}
+
+Environment *ClassTable::init_methods_info(Classes classes) {
+    Environment *environment = new SymbolTableEnvironment();
+    for (int i = classes->first(); classes->more(i); i = classes->next(i))
+        classes->nth(i)->init_methods_info(environment);
+    return environment;
+}
+
+void class__class::init_methods_info(Environment *environment) {
+    method_class *method;
+    for (int i = features->first(); features->more(i); i = features->next(i))
+        if (features->nth(i)->is_method()) {
+            method = (method_class *)features->nth(i);
+            method->init_info(environment, name);
+        }
+}
+
+void method_class::init_info(Environment *environment, Symbol class_name) {
+    PMethodTypes method_types = new struct MethodTypes();
+    for (int i = formals->first(); formals->more(i); i = formals->next(i))
+        formals->nth(i)->add_type(method_types->formal_types);
+    method_types->return_type = return_type;
+    environment->push_method(class_name, name, method_types);
+}
+
+void formal_class::add_type(std::vector<Symbol>& types) {
+    types.push_back(type_decl);
+}
+
+bool method_class::is_attribute() { return false; }
+bool method_class::is_method() { return true; }
+bool attr_class::is_attribute() { return true; }
+bool attr_class::is_method() { return false; }
+
+
+
+//Symbol Table
+//
+
+SymbolTableEnvironment::SymbolTableEnvironment() {}
+SymbolTableEnvironment::~SymbolTableEnvironment() {
+    for (int i = 0; i < elements.size(); i++)
+        delete elements[i];
+    std::vector<PElem>().swap(elements);
+}
+
+int SymbolTableEnvironment::push_var(Symbol name, Symbol type)  {
+    elements.push_back(new VarElem(name, type));
+    return elements.size() - 1;
+}
+
+Symbol SymbolTableEnvironment::find_var_type(Symbol name) {
+    PElem elem;
+    for (int i = elements.size() - 1; i >= 0; i--) {
+        elem = elements[i];
+        if (elem->is_var() && ((VarElem *)elem)->get_name() == name) // ? strcmp  elem->get_name()->get_string(), name->get_string()
+            return ((VarElem *)elem)->get_type();
+    }
+    return NULL; 
+}
+
+int SymbolTableEnvironment::push_method(Symbol class_name, Symbol method_name, PMethodTypes method_types) {
+    elements.push_back(new MethodElem(class_name, method_name, method_types));
+    return elements.size() - 1;
+}
+
+PMethodTypes SymbolTableEnvironment::find_method_type(Symbol class_name, Symbol method_name) {
+    PElem elem;
+    for (int i = elements.size() - 1; i >= 0; i--) {
+        elem = elements[i];
+        if (elem->is_method() 
+            && ((MethodElem *)elem)->get_class_name() == class_name 
+            && ((MethodElem *)elem)->get_method_name() == method_name)
+            
+          return ((MethodElem *)elem)->get_method_types();
+    }
+    return NULL;
+}
+
+int SymbolTableEnvironment::pop() {
+    PElem elem = elements[elements.size() - 1];
+    delete elem;
+    elements.pop_back();
+    return elements.size() - 1;
+}
+
+void SymbolTableEnvironment::print_elements() {
+    PElem elem;
+    for (int i = 0; i < elements.size(); i++) {
+        elem = elements[i];
+        if (elem->is_var()) {
+            printf("VAR <NAME:%s, TYPE:%s>\n", 
+                ((VarElem *)elem)->get_name()->get_string(), 
+                ((VarElem *)elem)->get_type()->get_string()
+            );
+        }
+        else {
+            printf("METHOD <CLASS:%s, METHOD:%s, <RETURN:%s", 
+                ((MethodElem *)elem)->get_class_name()->get_string(),
+                ((MethodElem *)elem)->get_method_name()->get_string(),
+                ((MethodElem *)elem)->get_method_types()->return_type->get_string()
+            );
+            for (int j = 0; j < ((MethodElem *)elem)->get_method_types()->formal_types.size(); j++)
+                printf(", FORMAL:%s", ((MethodElem *)elem)->get_method_types()->formal_types[j]->get_string());
+            printf(">>\n");
+        }
+    }
 }
