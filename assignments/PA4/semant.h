@@ -29,7 +29,7 @@ private:
 public:
   ClassTable(Classes);
   bool check_inheritance(Classes);
-  Environment *init_methods_info(Classes classes);
+  void init_methods_info(Classes classes);
   int errors() { return semant_errors; }
   ostream& semant_error();
   ostream& semant_error(Class_ c);

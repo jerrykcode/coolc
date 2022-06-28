@@ -232,7 +232,6 @@ ostream& ClassTable::semant_error()
 } 
 
 
-
 /*   This is the entry point to the semantic checker.
 
      Your checker should do the following two things:
@@ -246,22 +245,101 @@ ostream& ClassTable::semant_error()
      errors. Part 2) can be done in a second stage, when you want
      to build mycoolc.
  */
+
+
+PCT class_table;
+PSYMT symbol_table;
+Symbol current_class_name;
+std::map<char *, int> _str2id;
+int _id;
+std::map<char *, PMethodInfo> method_table;
+
+void init(Classes classes) {
+    class_table = new ClassTable(classes);
+    symbol_table = new SymbolTable<int, Type>();
+    _id = 0;
+}
+
+void addid(Symbol name, Symbol type, int line_number) {
+    if (_str2id.find(name->get_string()) == _str2id.end())
+        _str2id[name->get_string()] = _id++;
+    if (_str2id.find(type->get_string()) == _str2id.end())
+        _str2id[type->get_string()] = _id++;
+
+    int name_id = _str2id[name->get_string()];
+    int type_id = _str2id[type->get_string()];
+
+    Type *previous = symbol_table->probe(name_id);
+    if (previous != NULL)
+        class_table->semant_error() << "Line " << line_number << ": \'" << name->get_string() << "\' redeclared." << endl
+          << "note: previous declaration of \'" << name->get_string() << "\' was in Line " << previous->get_line_number() << endl;
+    else symbol_table->addid(name_id, new Type(type_id, type->get_string(), line_number));
+}
+
+Type *lookup(Symbol name) {
+    if (_str2id.find(name->get_string()) == _str2id.end())
+        return NULL;
+    return symbol_table->lookup(_str2id[name->get_string()]);
+}
+
+void add_method(Symbol class_name, Symbol method_name, PMethodInfo method_info) {
+    char *class_str = class_name->get_string();
+    char *method_str = method_name->get_string();
+
+    int class_str_len = strlen(class_str);
+    char *key = new char[class_str_len + strlen(method_str) + 1];
+    strcpy(key, class_str);
+    strcpy(key + class_str_len, method_str);
+
+    if (method_table.find(key) != method_table.end()) {
+        class_table->semant_error() << "Line " << method_info->line_number << ": redeclaration of method \'"
+            << class_name->get_string() << "@" << method_name->get_string() << "\'." << endl;
+        delete key;
+    }
+    else method_table[key] = method_info;
+}
+
+PMethodInfo get_method(Type *caller_type, Symbol method_name) {
+    std::string& class_str = caller_type->get_type_str();
+    char *method_str = method_name->get_string();
+    int key_len = class_str.size() + strlen(method_str) + 1;
+    char *key = new char[key_len];
+    int i;
+    for (i = 0; i < class_str.size(); i++) key[i] = class_str[i];
+    strcpy(key + i, method_str);
+    PMethodInfo result = method_table[key];
+    delete key;
+    return result;
+}
+
+void print_method_info(PMethodInfo info) {
+    printf("<ret: %s  formals:<", info->return_type->get_string());
+    for (int i = 0; i < info->formal_types.size(); i++) printf(" %s", info->formal_types[i]->get_string());
+    printf(" >>\n");
+}
+
 void program_class::semant()
 {
-    initialize_constants();
+  initialize_constants();
 
-    /* ClassTable constructor may do some semantic analysis */
-    ClassTable *classtable = new ClassTable(classes);
+    init(classes);
 
     /* some semantic analysis code may go here */
     // assignment PA4
 
-    if (classtable->check_inheritance(classes)) {
-        Environment *environment = classtable->init_methods_info(classes);
-        ((SymbolTableEnvironment *)environment)->print_elements();
+    if (class_table->check_inheritance(classes)) {
+        class_table->init_methods_info(classes);
     }
 
-    if (classtable->errors()) {
+    for (auto it = method_table.begin(); it != method_table.end(); it++) {
+        print_method_info(it->second);
+    }
+
+    for (int i = classes->first(); classes->more(i); i = classes->next(i)) {
+        classes->nth(i)->type_check();
+    }
+
+    if (class_table->errors()) {
 	cerr << "Compilation halted due to static semantic errors." << endl;
 	exit(1);
     }
@@ -341,28 +419,27 @@ Symbol class__class::get_parent() {
     return parent;
 }
 
-Environment *ClassTable::init_methods_info(Classes classes) {
-    Environment *environment = new SymbolTableEnvironment();
+void ClassTable::init_methods_info(Classes classes) {
     for (int i = classes->first(); classes->more(i); i = classes->next(i))
-        classes->nth(i)->init_methods_info(environment);
-    return environment;
+        classes->nth(i)->init_methods_info();
 }
 
-void class__class::init_methods_info(Environment *environment) {
+void class__class::init_methods_info() {
     method_class *method;
     for (int i = features->first(); features->more(i); i = features->next(i))
         if (features->nth(i)->is_method()) {
             method = (method_class *)features->nth(i);
-            method->init_info(environment, name);
+            method->init_info(name);
         }
 }
 
-void method_class::init_info(Environment *environment, Symbol class_name) {
-    PMethodTypes method_types = new struct MethodTypes();
+void method_class::init_info(Symbol class_name) {
+    PMethodInfo method_info = new struct MethodInfo();
     for (int i = formals->first(); formals->more(i); i = formals->next(i))
-        formals->nth(i)->add_type(method_types->formal_types);
-    method_types->return_type = return_type;
-    environment->push_method(class_name, name, method_types);
+        formals->nth(i)->add_type(method_info->formal_types);
+    method_info->return_type = return_type;
+    method_info->line_number = line_number;
+    add_method(class_name, name, method_info);
 }
 
 void formal_class::add_type(std::vector<Symbol>& types) {
@@ -375,76 +452,196 @@ bool attr_class::is_attribute() { return true; }
 bool attr_class::is_method() { return false; }
 
 
-
-//Symbol Table
+///
+//type check
 //
 
-SymbolTableEnvironment::SymbolTableEnvironment() {}
-SymbolTableEnvironment::~SymbolTableEnvironment() {
-    for (int i = 0; i < elements.size(); i++)
-        delete elements[i];
-    std::vector<PElem>().swap(elements);
-}
 
-int SymbolTableEnvironment::push_var(Symbol name, Symbol type)  {
-    elements.push_back(new VarElem(name, type));
-    return elements.size() - 1;
-}
-
-Symbol SymbolTableEnvironment::find_var_type(Symbol name) {
-    PElem elem;
-    for (int i = elements.size() - 1; i >= 0; i--) {
-        elem = elements[i];
-        if (elem->is_var() && ((VarElem *)elem)->get_name() == name) // ? strcmp  elem->get_name()->get_string(), name->get_string()
-            return ((VarElem *)elem)->get_type();
-    }
-    return NULL; 
-}
-
-int SymbolTableEnvironment::push_method(Symbol class_name, Symbol method_name, PMethodTypes method_types) {
-    elements.push_back(new MethodElem(class_name, method_name, method_types));
-    return elements.size() - 1;
-}
-
-PMethodTypes SymbolTableEnvironment::find_method_type(Symbol class_name, Symbol method_name) {
-    PElem elem;
-    for (int i = elements.size() - 1; i >= 0; i--) {
-        elem = elements[i];
-        if (elem->is_method() 
-            && ((MethodElem *)elem)->get_class_name() == class_name 
-            && ((MethodElem *)elem)->get_method_name() == method_name)
-            
-          return ((MethodElem *)elem)->get_method_types();
-    }
-    return NULL;
-}
-
-int SymbolTableEnvironment::pop() {
-    PElem elem = elements[elements.size() - 1];
-    delete elem;
-    elements.pop_back();
-    return elements.size() - 1;
-}
-
-void SymbolTableEnvironment::print_elements() {
-    PElem elem;
-    for (int i = 0; i < elements.size(); i++) {
-        elem = elements[i];
-        if (elem->is_var()) {
-            printf("VAR <NAME:%s, TYPE:%s>\n", 
-                ((VarElem *)elem)->get_name()->get_string(), 
-                ((VarElem *)elem)->get_type()->get_string()
-            );
+bool class__class::type_check() {
+    bool result = true;
+    current_class_name = name;
+    symbol_table->enterscope();
+    for (int i = features->first(); features->more(i); i = features->next(i))
+        if (features->nth(i)->is_attribute()) {
+           (( attr_class *)features->nth(i))->add_to_symbol_table();
         }
-        else {
-            printf("METHOD <CLASS:%s, METHOD:%s, <RETURN:%s", 
-                ((MethodElem *)elem)->get_class_name()->get_string(),
-                ((MethodElem *)elem)->get_method_name()->get_string(),
-                ((MethodElem *)elem)->get_method_types()->return_type->get_string()
-            );
-            for (int j = 0; j < ((MethodElem *)elem)->get_method_types()->formal_types.size(); j++)
-                printf(", FORMAL:%s", ((MethodElem *)elem)->get_method_types()->formal_types[j]->get_string());
-            printf(">>\n");
+    for (int i = features->first(); features->more(i); i = features->next(i))
+        if (features->nth(i)->is_method()) {
+            if ( ! ((method_class *)features->nth(i))->type_check() ) result = false;
         }
-    }
+    symbol_table->exitscope();
+    return result;
 }
+
+
+void attr_class::add_to_symbol_table() {
+    addid(name, type_decl, line_number);
+}
+
+
+bool method_class::type_check() {
+    symbol_table->enterscope();
+    int n_errors = class_table->errors();
+    for (int i = formals->first(); formals->more(i); i = formals->next(i)) 
+        formals->nth(i)->add_to_symbol_table();
+    expr->type_check();
+    symbol_table->exitscope();
+    return n_errors == class_table->errors();
+}
+
+void formal_class::add_to_symbol_table() {
+    addid(name, type_decl, line_number);
+}
+
+
+Type *assign_class::type_check() {
+    // name <- expr
+    Type *var_type = lookup(name);
+    if (var_type == NULL)
+        class_table->semant_error() << "Line " << line_number << ": \'" << name->get_string() << "\' undeclared!" << endl;
+
+    Type *expr_type = expr->type_check();
+    if (var_type && var_type->get_type_id() != expr_type->get_type_id())
+        class_table->semant_error() << "Line " << line_number << ": incompatible types when assigning to type \'"
+            << var_type->get_type_str() << "\' from type \'" << expr_type->get_type_str() << "\'" << endl;
+
+    return expr_type;
+}
+
+inline bool str_equal(std::string& str, char *cstr) {
+    int len = str.size();
+    if (len != strlen(cstr)) return false;
+    for (int i = 0; i < len; i++)
+        if (str[i] != cstr[i]) return false;
+    return true;
+}
+
+inline Type *new_type(Symbol type, int line_number) {
+    if (_str2id.find(type->get_string()) == _str2id.end())
+        _str2id[type->get_string()] = _id++;
+
+    int type_id = _str2id[type->get_string()];
+    Type *res = new Type(type_id, type->get_string(), line_number);
+}
+
+Type *dispatch_class::type_check() {
+    Type *caller_type = expr->type_check();
+    if (caller_type == NULL) {
+      return NULL;
+    }
+    PMethodInfo method_info = get_method(caller_type, name);
+    bool err = false;
+    if (method_info == NULL) {
+        class_table->semant_error() << "Line " << line_number << ": Method \'" << name->get_string()
+            << "\' undeclared in class \'" << caller_type->get_type_str() << "\'" << endl;
+    }
+    else {
+        int i;
+        for (i = actual->first(); actual->more(i); i = actual->next(i)) {
+            if (i >= method_info->formal_types.size()) { err = true; break; }
+            if (! str_equal(actual->nth(i)->type_check()->get_type_str(), method_info->formal_types[i]->get_string())) { 
+                err = true; break; 
+            }
+        }
+        if (i != method_info->formal_types.size()) err = true;
+        if (err)
+            class_table->semant_error() << "Line " << line_number << ": Method \'" << name->get_string() 
+                << "\': incompatible type for argument" << endl;
+    }
+    return new_type(method_info->return_type, line_number);
+}
+
+
+Type *static_dispatch_class::type_check() {
+
+}
+
+Type *cond_class::type_check() {
+
+}
+
+Type *loop_class::type_check() {
+
+}
+
+Type *typcase_class::type_check() {
+
+}
+
+Type *block_class::type_check() {
+
+}
+
+Type *let_class::type_check() {
+
+}  
+
+
+Type *plus_class::type_check() {
+
+}  
+
+
+Type *sub_class::type_check() {
+
+}  
+
+Type *mul_class::type_check() {
+
+}  
+
+
+Type *divide_class::type_check() {
+
+}  
+
+Type *neg_class::type_check() {
+
+} 
+
+Type *lt_class::type_check() {
+
+} 
+
+
+Type *eq_class::type_check() {
+
+}  
+
+Type *leq_class::type_check() {
+
+}  
+
+Type *comp_class::type_check() {
+
+}  
+
+Type *int_const_class::type_check() {
+
+}  
+
+
+Type *bool_const_class::type_check() {
+
+}  
+
+Type *string_const_class::type_check() {
+
+} 
+
+Type *new__class::type_check() {
+    return new_type(type_name, line_number);
+}  
+
+
+Type *isvoid_class::type_check() {
+
+}  
+
+Type *no_expr_class::type_check() {
+
+} 
+
+Type *object_class::type_check() {
+
+}  

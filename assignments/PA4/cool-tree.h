@@ -11,82 +11,37 @@
 
 #include "tree.h"
 #include "cool-tree.handcode.h"
+#include <symtab.h>
 #include <vector>
+#include <string>
 
-// Symbol table
-typedef struct MethodTypes {
+class ClassTable;
+typedef ClassTable *PCT;
+
+class Type {
+private:
+    int type_id;
+    int line_number;
+    std::string type_str;
+public:
+    int get_type_id() { return type_id; }
+    int get_line_number() { return line_number; }
+    std::string& get_type_str() { return type_str; }
+    Type(int type_id, char *type_cstr, int line_number) : type_id(type_id), line_number(line_number) {
+        type_str = *(new std::string(type_cstr));
+    }
+};
+typedef SymbolTable<int, Type> *PSYMT;
+
+typedef struct MethodInfo {
     std::vector<Symbol> formal_types;
     Symbol return_type;
-    ~MethodTypes() {
+    int line_number;
+    ~MethodInfo() {
         std::vector<Symbol>().swap(formal_types);
     }
-}*PMethodTypes;
+}*PMethodInfo;
 
-class Environment {
-public:
-  virtual int push_var(Symbol name, Symbol type) = 0; // return an id for <name, type>
-  virtual Symbol find_var_type(Symbol name) = 0;
-  virtual int push_method(Symbol class_name, Symbol method_name, PMethodTypes) = 0;
-  virtual PMethodTypes find_method_type(Symbol class_name, Symbol method_name) = 0;
-  virtual int pop() = 0;
-  virtual ~Environment() {}
-};
-
-class SymbolTableEnvironment : public Environment {
-public:
-  SymbolTableEnvironment();
-  ~SymbolTableEnvironment();
-  int push_var(Symbol name, Symbol type); // return an id for <name, type>
-  Symbol find_var_type(Symbol name);
-  int push_method(Symbol class_name, Symbol method_name, PMethodTypes);
-  PMethodTypes find_method_type(Symbol class_name, Symbol method_name);
-  int pop();
-  void print_elements();
-
-private:
-
-  class Elem {
-  public:
-    virtual bool is_var() = 0;
-    virtual bool is_method() = 0;
-    virtual ~Elem() {}
-  };
-
-  class VarElem : public Elem {
-  public:
-    ~VarElem() {}
-    bool is_var() { return true; }
-    bool is_method() { return false; }
-    VarElem(Symbol name, Symbol type) : name(name), type(type) {}
-    Symbol get_name() { return name; }
-    Symbol get_type() { return type; }
-  private:
-    Symbol name;
-    Symbol type;
-  };
-
-  class MethodElem : public Elem {
-  public:
-    bool is_var() { return false; }
-    bool is_method() { return true; }
-    MethodElem(Symbol class_name, Symbol method_name, PMethodTypes types)
-      : class_name(class_name), method_name(method_name), method_types(types) {}
-    ~MethodElem() {
-        delete method_types;
-    }
-    Symbol get_class_name() { return class_name; }
-    Symbol get_method_name() { return method_name; }
-    PMethodTypes get_method_types() { return method_types; }
-
-  private:
-    Symbol class_name;
-    Symbol method_name;
-    PMethodTypes method_types;
-  };
-
-  typedef Elem *PElem;
-  std::vector<PElem> elements;
-};
 
 // define the class for phylum
 // define simple phylum - Program
@@ -112,7 +67,8 @@ public:
    virtual Class_ copy_Class_() = 0;
    virtual Symbol get_name() = 0;
    virtual Symbol get_parent() = 0;
-   virtual void init_methods_info(Environment *environment) = 0;
+   virtual void init_methods_info() = 0;
+   virtual bool type_check() = 0;
 
 #ifdef Class__EXTRAS
    Class__EXTRAS
@@ -144,6 +100,7 @@ public:
    tree_node *copy()		 { return copy_Formal(); }
    virtual Formal copy_Formal() = 0;
    virtual void add_type(std::vector<Symbol>& types) = 0;
+   virtual void add_to_symbol_table() = 0;
 
 #ifdef Formal_EXTRAS
    Formal_EXTRAS
@@ -158,6 +115,7 @@ class Expression_class : public tree_node {
 public:
    tree_node *copy()		 { return copy_Expression(); }
    virtual Expression copy_Expression() = 0;
+   virtual Type *type_check() = 0;
 
 #ifdef Expression_EXTRAS
    Expression_EXTRAS
@@ -244,7 +202,8 @@ public:
    void dump(ostream& stream, int n);
    Symbol get_name();
    Symbol get_parent();
-   void init_methods_info(Environment *environment);
+   void init_methods_info();
+   bool type_check();
 
 #ifdef Class__SHARED_EXTRAS
    Class__SHARED_EXTRAS
@@ -273,7 +232,8 @@ public:
    void dump(ostream& stream, int n);
    bool is_attribute();
    bool is_method();
-   void init_info(Environment *environment, Symbol class_name);
+   void init_info(Symbol class_name);
+   bool type_check();
 
 #ifdef Feature_SHARED_EXTRAS
    Feature_SHARED_EXTRAS
@@ -300,6 +260,7 @@ public:
    void dump(ostream& stream, int n);
    bool is_attribute();
    bool is_method();
+   void add_to_symbol_table();
 
 #ifdef Feature_SHARED_EXTRAS
    Feature_SHARED_EXTRAS
@@ -323,6 +284,7 @@ public:
    Formal copy_Formal();
    void dump(ostream& stream, int n);
    void add_type(std::vector<Symbol>& types);
+   void add_to_symbol_table();
 
 #ifdef Formal_SHARED_EXTRAS
    Formal_SHARED_EXTRAS
@@ -369,6 +331,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Type *type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -395,6 +358,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Type *type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -419,6 +383,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Type *type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -443,6 +408,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Type *type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -465,6 +431,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Type *type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -487,6 +454,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Type *type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -507,6 +475,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Type *type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -533,6 +502,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Type *type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -555,6 +525,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Type *type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -577,6 +548,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Type *type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -599,6 +571,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Type *type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -621,6 +594,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Type *type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -641,6 +615,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Type *type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -663,6 +638,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Type *type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -685,6 +661,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Type *type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -707,6 +684,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Type *type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -727,6 +705,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Type *type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -747,6 +726,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Type *type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -767,6 +747,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Type *type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -787,6 +768,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Type *type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -807,6 +789,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Type *type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -827,6 +810,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Type *type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -845,6 +829,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Type *type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -865,6 +850,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+   Type *type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
