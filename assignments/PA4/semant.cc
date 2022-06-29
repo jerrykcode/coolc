@@ -260,14 +260,28 @@ Symbol current_class_name;
 std::map<char *, int, cmp_str_st> _str2id;
 int _id;
 std::map<char *, PMethodInfo, cmp_str_st> method_table;
+std::vector<Type *> all_types_pool; //Use for delete memory
 
-void init(Classes classes) {
+inline void init(Classes classes) {
     class_table = new ClassTable(classes);
     symbol_table = new SymbolTable<int, Type>();
     _id = 0;
+    _str2id["Bool"] = _id++;
+    _str2id["Int"] = _id++;
+    _str2id["String"] = _id++;
 }
 
-void addid(Symbol name, Symbol type, int line_number) {
+inline Type *new_type(Symbol type, int line_number) {
+    if (_str2id.find(type->get_string()) == _str2id.end())
+        _str2id[type->get_string()] = _id++;
+
+    int type_id = _str2id[type->get_string()];
+    Type *res = new Type(type_id, type->get_string(), line_number);
+    all_types_pool.push_back(res);
+    return res;
+}
+
+inline void addid(Symbol name, Symbol type, int line_number) {
     if (_str2id.find(name->get_string()) == _str2id.end())
         _str2id[name->get_string()] = _id++;
     if (_str2id.find(type->get_string()) == _str2id.end())
@@ -280,16 +294,20 @@ void addid(Symbol name, Symbol type, int line_number) {
     if (previous != NULL)
         class_table->semant_error() << "Line " << line_number << ": \'" << name->get_string() << "\' redeclared." << endl
           << "note: previous declaration of \'" << name->get_string() << "\' was in Line " << previous->get_line_number() << endl;
-    else symbol_table->addid(name_id, new Type(type_id, type->get_string(), line_number));
+    else {
+        Type *newtype = new Type(type_id, type->get_string(), line_number);
+        all_types_pool.push_back(newtype);
+        symbol_table->addid(name_id, newtype);
+    }
 }
 
-Type *lookup(Symbol name) {
+inline Type *lookup(Symbol name) {
     if (_str2id.find(name->get_string()) == _str2id.end())
         return NULL;
     return symbol_table->lookup(_str2id[name->get_string()]);
 }
 
-void add_method(Symbol class_name, Symbol method_name, PMethodInfo method_info) {
+inline void add_method(Symbol class_name, Symbol method_name, PMethodInfo method_info) {
     char *class_str = class_name->get_string();
     char *method_str = method_name->get_string();
 
@@ -306,7 +324,7 @@ void add_method(Symbol class_name, Symbol method_name, PMethodInfo method_info) 
     else method_table[key] = method_info;
 }
 
-PMethodInfo get_method(Type *caller_type, Symbol method_name) {
+inline PMethodInfo get_method(Type *caller_type, Symbol method_name) {
     std::string& class_str = caller_type->get_type_str();
     char *method_str = method_name->get_string();
     int key_len = class_str.size() + strlen(method_str) + 1;
@@ -319,7 +337,7 @@ PMethodInfo get_method(Type *caller_type, Symbol method_name) {
     return result;
 }
 
-void print_method_info(PMethodInfo info) {
+inline void print_method_info(PMethodInfo info) {
     printf("<ret: %s  formals:<", info->return_type->get_string());
     for (int i = 0; i < info->formal_types.size(); i++) printf(" %s", info->formal_types[i]->get_string());
     printf(" >>\n");
@@ -414,8 +432,49 @@ bool ClassTable::check(std::vector<Class_> all_classes) {
 }
 
 bool ClassTable::is_subclassof(std::string sub_class_str, Symbol class_type_name) {
-    std::string class_str(class_type_name->get_string()); // char * to string
-    
+    char *sub_class_cstr = new char[sub_class_str.size() + 1];
+    for (int i = 0; i < sub_class_str.size(); i++) sub_class_cstr[i] = sub_class_str[i];
+    sub_class_cstr[sub_class_str.size()] = 0;
+
+    char *class_cstr = class_type_name->get_string();
+
+    if (class2id.find(sub_class_cstr) == class2id.end()) {
+        delete sub_class_cstr;
+        return false;
+    }
+    int sub_class_id = class2id[sub_class_cstr];
+    delete sub_class_cstr;
+    if (class2id.find(class_cstr) == class2id.end()) {
+        return false;
+    }
+    int class_id = class2id[class_cstr];
+
+    // bfs check if there is a route from sub_class_id to class_id
+    std::queue<int> qq;
+    qq.push(sub_class_id);
+    bool *visit = new bool[num_vertices];
+    memset(visit, 0, num_vertices);
+    visit[sub_class_id] = true;
+    bool result = false;
+    while (!qq.empty()) {
+        int v = qq.front();
+        qq.pop();
+        for (auto it = graph[v].begin(); it != graph[v].end(); it++) {
+            if (*it == class_id) {
+                result = true;
+                break;
+            }
+            if (!visit[*it]) {
+                visit[*it] = true;
+                qq.push(*it);
+            }
+        }
+        if (result) break;
+    }
+    while (!qq.empty()) qq.pop();
+    std::queue<int>().swap(qq);
+    delete visit;
+    return result;
 }
 
 
@@ -470,6 +529,9 @@ bool attr_class::is_method() { return false; }
 //type check
 //
 
+inline bool is_bool(Type *type) {
+    return type->get_type_id() == _str2id["Bool"];
+}
 
 bool class__class::type_check() {
     bool result = true;
@@ -530,14 +592,6 @@ inline bool str_equal(std::string& str, char *cstr) {
     return true;
 }
 
-inline Type *new_type(Symbol type, int line_number) {
-    if (_str2id.find(type->get_string()) == _str2id.end())
-        _str2id[type->get_string()] = _id++;
-
-    int type_id = _str2id[type->get_string()];
-    Type *res = new Type(type_id, type->get_string(), line_number);
-}
-
 Type *dispatch_class::type_check() {
     Type *caller_type = expr->type_check();
     if (caller_type == NULL) {
@@ -567,11 +621,43 @@ Type *dispatch_class::type_check() {
 
 
 Type *static_dispatch_class::type_check() {
-
+    Type *caller_type = expr->type_check();
+    if (!class_table->is_subclassof(caller_type->get_type_str(), type_name)) {
+        class_table->semant_error() << "Line " << line_number << ": class \'" << caller_type->get_type_str()
+            << "\' is not a descendant of class \'" << type_name->get_string() << "\'" << endl;
+        return NULL; 
+    }
+    PMethodInfo method_info = get_method(new_type(type_name, line_number), name);
+    if (method_info == NULL) {
+        class_table->semant_error() << "Line " << line_number << ": Method \'" << name->get_string()
+            << "\' undeclared in class \'" << type_name->get_string() << "\'" << endl;
+    }
+    else {
+        bool err = false;
+        int i;
+        for (i = actual->first(); actual->more(i); i = actual->next(i)) {
+            if (i >= method_info->formal_types.size()) { err = true; break; }
+            if (! str_equal(actual->nth(i)->type_check()->get_type_str(), method_info->formal_types[i]->get_string())) {
+                err = true; break;
+            }
+        }
+        if (err)
+            class_table->semant_error() << "Line " << line_number << ": Method \'" << name->get_string() 
+                << "\': incompatible type for argument" << endl;
+    }
+    return new_type(method_info->return_type, line_number);
 }
 
 Type *cond_class::type_check() {
-
+    Type *pred_type = pred->type_check();
+    if (pred_type && ! is_bool(pred_type))
+        class_table->semant_error() << "Line " << line_number << ": \'if\' condition: not a boolean expression" << endl;
+    Type *then_type = then_exp->type_check();
+    Type *else_type = else_exp->type_check();
+    if (then_type->get_type_id() != else_type->get_type_id())
+        class_table->semant_error() << "Line " << line_number << ": \'if\' condition: "
+            << "mismatching of \'then\' and \'else\' expression" << endl;
+    return then_type;
 }
 
 Type *loop_class::type_check() {
