@@ -7,12 +7,21 @@
 #include "stringtab.h"
 #include "symtab.h"
 #include "list.h"
+#include <map>
+#include <string>
+#include <cstring>
 
 #define TRUE 1
 #define FALSE 0
 
 class ClassTable;
 typedef ClassTable *ClassTableP;
+
+struct cmp_str_st {
+    bool operator() (char *a, char *b) const {
+        return strcmp(a, b) < 0;
+    }
+};
 
 // This is a structure that may be used to contain the semantic
 // information such as the inheritance graph.  You may use it or not as
@@ -26,28 +35,23 @@ private:
   ostream& error_stream;
   std::vector<Class_> basic_classes;
 
+  std::map<char *, int, cmp_str_st> class2id;
+  std::vector<int> *graph;
+  int num_vertices;
 public:
   ClassTable(Classes);
+  ~ClassTable();
   bool check_inheritance(Classes);
+  bool is_subclassof(std::string, Symbol);
   void init_methods_info(Classes classes);
   int errors() { return semant_errors; }
   ostream& semant_error();
   ostream& semant_error(Class_ c);
   ostream& semant_error(Symbol filename, tree_node *t);
-};
 
-class InheritanceChecker {
-public:
-  virtual bool check(std::vector<Class_> all_classes) = 0;
+private:
+  bool check(std::vector<Class_> all_classes);
 };
-
-class GraphInheritanceChecker : public InheritanceChecker {
-public:
-  virtual bool check(std::vector<Class_> all_classes);
-  GraphInheritanceChecker() {}
-  ~GraphInheritanceChecker() {}
-};
-
 
 #endif
 

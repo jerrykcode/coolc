@@ -88,6 +88,13 @@ ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) 
     install_basic_classes();
 }
 
+ClassTable::~ClassTable() {
+    std::vector<Class_>().swap(basic_classes);
+    std::map<char *, int, cmp_str_st>().swap(class2id);
+    for (int v = 0; v < num_vertices; v++)
+        std::vector<int>().swap(graph[v]);
+}
+
 void ClassTable::install_basic_classes() {
 
     // The tree package uses these globals to annotate the classes built below.
@@ -250,9 +257,9 @@ ostream& ClassTable::semant_error()
 PCT class_table;
 PSYMT symbol_table;
 Symbol current_class_name;
-std::map<char *, int> _str2id;
+std::map<char *, int, cmp_str_st> _str2id;
 int _id;
-std::map<char *, PMethodInfo> method_table;
+std::map<char *, PMethodInfo, cmp_str_st> method_table;
 
 void init(Classes classes) {
     class_table = new ClassTable(classes);
@@ -339,6 +346,7 @@ void program_class::semant()
         classes->nth(i)->type_check();
     }
 
+
     if (class_table->errors()) {
 	cerr << "Compilation halted due to static semantic errors." << endl;
 	exit(1);
@@ -349,36 +357,33 @@ bool ClassTable::check_inheritance(Classes classes) {
     std::vector<Class_> all_classes(basic_classes); //copy
     for (int i = classes->first(); classes->more(i); i = classes->next(i))
         all_classes.push_back(classes->nth(i));
-    InheritanceChecker *ic = new GraphInheritanceChecker();
     bool result = true;
-    if (!ic->check(all_classes)) {
+    if (!check(all_classes)) {
         result = false;
         semant_errors++;
         cerr << "Inheritance Error!~~" << endl;
     }
-    delete ic;
     std::vector<Class_>().swap(all_classes);
     return result;
 }
 
-bool GraphInheritanceChecker::check(std::vector<Class_> all_classes) {
+bool ClassTable::check(std::vector<Class_> all_classes) {
     int cnt = 0;
-    std::map<Symbol, int> class2id;
     for (int i = 0; i < all_classes.size(); i++) {
         Class_ class_ = all_classes[i];
         // mapping from Class_ to id
-        if (class2id.find(class_->get_name()) == class2id.end()) 
-           class2id[class_->get_name()] = cnt++;
+        if (class2id.find(class_->get_name()->get_string()) == class2id.end()) 
+           class2id[class_->get_name()->get_string()] = cnt++;
     }
-    int num_vertices = cnt;
-    std::vector<int> *graph = new std::vector<int>[num_vertices];
+    num_vertices = cnt;
+    graph = new std::vector<int>[num_vertices];
     int *indegree = new int[num_vertices];
     memset(indegree, 0, sizeof(int)*num_vertices);
     // Insert edges
     for (int i = 0; i < all_classes.size(); i++) {
         Class_ class_ = all_classes[i];
-        int class_id = class2id[class_->get_name()];
-        int parent_id = class2id[class_->get_parent()];
+        int class_id = class2id[class_->get_name()->get_string()];
+        int parent_id = class2id[class_->get_parent()->get_string()];
         if (class_id != parent_id) {
             graph[class_id].push_back(parent_id);
             indegree[parent_id]++;
@@ -404,12 +409,15 @@ bool GraphInheritanceChecker::check(std::vector<Class_> all_classes) {
             }
         }
     }
-    std::map<Symbol, int>().swap(class2id);
-    for (int v = 0; v < num_vertices; v++)
-        std::vector<int>().swap(graph[v]);
     delete indegree;
     return cnt == num_vertices;
 }
+
+bool ClassTable::is_subclassof(std::string sub_class_str, Symbol class_type_name) {
+    std::string class_str(class_type_name->get_string()); // char * to string
+    
+}
+
 
 Symbol class__class::get_name() {
     return name;
@@ -420,8 +428,14 @@ Symbol class__class::get_parent() {
 }
 
 void ClassTable::init_methods_info(Classes classes) {
+    std::vector<Class_> all_classes(basic_classes); //copy
     for (int i = classes->first(); classes->more(i); i = classes->next(i))
-        classes->nth(i)->init_methods_info();
+        all_classes.push_back(classes->nth(i));
+
+    for (Class_ class_ : all_classes)
+        class_->init_methods_info();
+
+    std::vector<Class_>().swap(all_classes);
 }
 
 void class__class::init_methods_info() {
