@@ -18,7 +18,7 @@ class ClassTable;
 typedef ClassTable *ClassTableP;
 
 struct cmp_str_st {
-    bool operator() (char *a, char *b) const {
+    bool operator() (const char *a, const char *b) const {
         return strcmp(a, b) < 0;
     }
 };
@@ -35,14 +35,16 @@ private:
   ostream& error_stream;
   std::vector<Class_> basic_classes;
 
-  std::map<char *, int, cmp_str_st> class2id;
+  std::map<const char *, int, cmp_str_st> class2id;
   std::vector<int> *graph;
   int num_vertices;
 public:
   ClassTable(Classes);
   ~ClassTable();
   bool check_inheritance(Classes);
-  bool is_subclassof(std::string, Symbol);
+  bool is_subclassof(std::string&, std::string&);
+  bool is_subclassof(const char *, const char *);
+  Type *lca(Type *a, Type *b);
   void init_methods_info(Classes classes);
   int errors() { return semant_errors; }
   ostream& semant_error();

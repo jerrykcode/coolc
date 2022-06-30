@@ -90,7 +90,7 @@ ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) 
 
 ClassTable::~ClassTable() {
     std::vector<Class_>().swap(basic_classes);
-    std::map<char *, int, cmp_str_st>().swap(class2id);
+    std::map<const char *, int, cmp_str_st>().swap(class2id);
     for (int v = 0; v < num_vertices; v++)
         std::vector<int>().swap(graph[v]);
 }
@@ -431,19 +431,29 @@ bool ClassTable::check(std::vector<Class_> all_classes) {
     return cnt == num_vertices;
 }
 
-bool ClassTable::is_subclassof(std::string sub_class_str, Symbol class_type_name) {
-    char *sub_class_cstr = new char[sub_class_str.size() + 1];
-    for (int i = 0; i < sub_class_str.size(); i++) sub_class_cstr[i] = sub_class_str[i];
-    sub_class_cstr[sub_class_str.size()] = 0;
+inline char *string2charptr(std::string& s) {
+    int len = s.size();
+    char *cs = new char[len + 1];
+    for (int i = 0; i < len; i++)
+        cs[i] = s[i];
+    cs[len] = 0;
+    return cs;
+}
 
-    char *class_cstr = class_type_name->get_string();
+bool ClassTable::is_subclassof(std::string& sub_class_str, std::string& class_str) {
+    char *sub_class_cstr = string2charptr(sub_class_str);
+    char *class_cstr = string2charptr(class_str);
+    bool res = is_subclassof(sub_class_cstr, class_cstr);
+    delete sub_class_cstr;
+    delete class_cstr;
+    return res;
+}
 
+bool ClassTable::is_subclassof(const char *sub_class_cstr, const char *class_cstr) {
     if (class2id.find(sub_class_cstr) == class2id.end()) {
-        delete sub_class_cstr;
         return false;
     }
     int sub_class_id = class2id[sub_class_cstr];
-    delete sub_class_cstr;
     if (class2id.find(class_cstr) == class2id.end()) {
         return false;
     }
@@ -477,6 +487,68 @@ bool ClassTable::is_subclassof(std::string sub_class_str, Symbol class_type_name
     return result;
 }
 
+Type *ClassTable::lca(Type *a, Type *b) {
+    int **dist = new int*[2];
+    std::queue<int> qq;
+    char *a_cstr = string2charptr(a->get_type_str());
+    if (class2id.find(a_cstr) == class2id.end()) {
+        delete dist;
+        std::queue<int>().swap(qq);
+        delete a_cstr;
+        return NULL;
+    }
+    int a_id = class2id[a_cstr];
+    delete a_cstr;
+    char *b_cstr = string2charptr(b->get_type_str());
+    if (class2id.find(b_cstr) == class2id.end()) {
+        delete dist;
+        std::queue<int>().swap(qq);
+        delete a_cstr;
+        delete b_cstr;
+        return NULL;
+    }
+    int b_id = class2id[b_cstr];
+    delete b_cstr;
+    int src, v, *d;
+    for (src = a_id, d = dist[0];  ; src = b_id, d = dist[1]) { // only loop 2 times
+        d = new int[num_vertices];
+        memset(d, 0xff, num_vertices * sizeof(int)); //fill with -1
+        d[src] = 0;
+        qq.push(src);
+        while (!qq.empty()) {
+            v = qq.front();
+            qq.pop();
+            for (auto it = graph[v].begin(); it != graph[v].end(); it++) {
+                if (d[*it] == -1) { // not visit yet
+                    d[*it] = d[v] + 1;
+                    qq.push(*it);
+                }
+            }
+        }
+        if (src == b_id) break;
+    }
+    std::queue<int>().swap(qq);
+    int lca_id = -1;
+    const char *lca_cstr;
+    int id;
+    for (auto it = class2id.begin(); it != class2id.end(); it++) {
+        id = it->second;
+        if (dist[0][id] != -1 && dist[1][id] != -1)
+            if (dist[0][id] == dist[1][id] && (lca_id == -1 || dist[0][id] < lca_id)) {
+                lca_id = id;
+                lca_cstr = it->first;
+            }
+    }
+    delete dist[0];
+    delete dist[1];
+    delete dist;
+    if (lca_id != -1) {
+        Type *res = new Type(lca_id, lca_cstr, -1/* not very clear what a line_number should be in here... */);
+        all_types_pool.push_back(res);
+        return res;
+    }
+    return NULL;
+}
 
 Symbol class__class::get_name() {
     return name;
@@ -577,11 +649,17 @@ Type *assign_class::type_check() {
         class_table->semant_error() << "Line " << line_number << ": \'" << name->get_string() << "\' undeclared!" << endl;
 
     Type *expr_type = expr->type_check();
-    if (var_type && var_type->get_type_id() != expr_type->get_type_id())
-        class_table->semant_error() << "Line " << line_number << ": incompatible types when assigning to type \'"
-            << var_type->get_type_str() << "\' from type \'" << expr_type->get_type_str() << "\'" << endl;
-
-    return expr_type;
+    if (var_type) {
+        if (class_table->is_subclassof(expr_type->get_type_str(), var_type->get_type_str())) {
+            if (expr_type->get_type_id() != var_type->get_type_id()) {
+                symbol_table->addid(_str2id[name->get_string()], expr_type);
+            }
+        }  
+        else
+            class_table->semant_error() << "Line " << line_number << ": incompatible types when assigning to type \'"
+                << var_type->get_type_str() << "\' from type \'" << expr_type->get_type_str() << "\'" << endl;
+    }
+    return var_type ? var_type : expr_type;
 }
 
 inline bool str_equal(std::string& str, char *cstr) {
@@ -622,11 +700,14 @@ Type *dispatch_class::type_check() {
 
 Type *static_dispatch_class::type_check() {
     Type *caller_type = expr->type_check();
-    if (!class_table->is_subclassof(caller_type->get_type_str(), type_name)) {
+    char *caller_cstr = string2charptr(caller_type->get_type_str());
+    if (!class_table->is_subclassof(caller_cstr, type_name->get_string())) {
+        delete caller_cstr;
         class_table->semant_error() << "Line " << line_number << ": class \'" << caller_type->get_type_str()
             << "\' is not a descendant of class \'" << type_name->get_string() << "\'" << endl;
         return NULL; 
     }
+    delete caller_cstr;
     PMethodInfo method_info = get_method(new_type(type_name, line_number), name);
     if (method_info == NULL) {
         class_table->semant_error() << "Line " << line_number << ": Method \'" << name->get_string()
@@ -654,14 +735,18 @@ Type *cond_class::type_check() {
         class_table->semant_error() << "Line " << line_number << ": \'if\' condition: not a boolean expression" << endl;
     Type *then_type = then_exp->type_check();
     Type *else_type = else_exp->type_check();
-    if (then_type->get_type_id() != else_type->get_type_id())
+    Type *lca_type = class_table->lca(then_type, else_type);
+
+    if (lca_type == NULL) {
         class_table->semant_error() << "Line " << line_number << ": \'if\' condition: "
             << "mismatching of \'then\' and \'else\' expression" << endl;
-    return then_type;
+        return then_type;
+    }
+    return lca_type;
 }
 
 Type *loop_class::type_check() {
-
+    
 }
 
 Type *typcase_class::type_check() {

@@ -27,8 +27,10 @@ public:
     int get_type_id() { return type_id; }
     int get_line_number() { return line_number; }
     std::string& get_type_str() { return type_str; }
-    Type(int type_id, char *type_cstr, int line_number) : type_id(type_id), line_number(line_number) {
-        type_str = *(new std::string(type_cstr));
+    Type(int type_id, const char *type_cstr, int line_number) : type_id(type_id), line_number(line_number) {
+        int len = strlen(type_cstr);
+        for (int i = 0; i < len; i++)
+            type_str += type_cstr[i];
     }
 };
 typedef SymbolTable<int, Type> *PSYMT;
