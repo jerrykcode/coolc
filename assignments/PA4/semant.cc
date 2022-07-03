@@ -266,9 +266,6 @@ inline void init(Classes classes) {
     class_table = new ClassTable(classes);
     symbol_table = new SymbolTable<int, Type>();
     _id = 0;
-    _str2id["Bool"] = _id++;
-    _str2id["Int"] = _id++;
-    _str2id["String"] = _id++;
 }
 
 inline Type *new_type(Symbol type, int line_number) {
@@ -279,6 +276,61 @@ inline Type *new_type(Symbol type, int line_number) {
     Type *res = new Type(type_id, type->get_string(), line_number);
     all_types_pool.push_back(res);
     return res;
+}
+
+inline Type *void_type() {
+    static Type *singleton = NULL;
+    if (singleton == NULL) {
+        char *str = "void";
+        _str2id[str] = _id++;
+        singleton = new Type(_id - 1, str, 0);
+        all_types_pool.push_back(singleton);
+    }
+    return singleton;
+}
+
+inline Type *no_expr_type() {
+    static Type *singleton = NULL;
+    if (singleton == NULL) {
+        char *str = "no_expr";
+        _str2id[str] = _id++;
+        singleton = new Type(_id - 1, str, 0);
+        all_types_pool.push_back(singleton);
+    }
+    return singleton;
+}
+
+inline Type *bool_type() {
+    static Type *singleton = NULL;
+    if (singleton == NULL) {
+        char *str = "Bool";
+        _str2id[str] = _id++;
+        singleton = new Type(_id - 1, str, 0);
+        all_types_pool.push_back(singleton);
+    }
+    return singleton;
+}
+
+inline Type *int_type() {
+    static Type *singleton = NULL;
+    if (singleton == NULL) {
+        char *str = "Int";
+        _str2id[str] = _id++;
+        singleton = new Type(_id - 1, str, 0);
+        all_types_pool.push_back(singleton);
+    }
+    return singleton;
+}
+
+inline Type *string_type() {
+    static Type *singleton = NULL;
+    if (singleton == NULL) {
+        char *str = "String";
+        _str2id[str] = _id++;
+        singleton = new Type(_id - 1, str, 0);
+        all_types_pool.push_back(singleton);
+    }
+    return singleton;
 }
 
 inline void addid(Symbol name, Symbol type, int line_number) {
@@ -488,6 +540,8 @@ bool ClassTable::is_subclassof(const char *sub_class_cstr, const char *class_cst
 }
 
 Type *ClassTable::lca(Type *a, Type *b) {
+    if (a->get_type_id() == b->get_type_id()) //same type
+        return a;
     int **dist = new int*[2];
     std::queue<int> qq;
     char *a_cstr = string2charptr(a->get_type_str());
@@ -602,7 +656,19 @@ bool attr_class::is_method() { return false; }
 //
 
 inline bool is_bool(Type *type) {
-    return type->get_type_id() == _str2id["Bool"];
+    return type->get_type_id() == bool_type()->get_type_id();
+}
+
+inline bool is_int(Type *type) {
+    return type->get_type_id() == int_type()->get_type_id();
+}
+
+inline bool is_string(Type *type) {
+    return type->get_type_id() == string_type()->get_type_id();
+}
+
+inline bool is_no_expr(Type *type) {
+    return type->get_type_id() == no_expr_type()->get_type_id();
 }
 
 bool class__class::type_check() {
@@ -746,87 +812,167 @@ Type *cond_class::type_check() {
 }
 
 Type *loop_class::type_check() {
-    
+    Type *pred_type = pred->type_check();
+    if (!is_bool(pred_type))
+        class_table->semant_error() << "Line " << line_number << ": \'while\' loop: not a boolean expression" << endl;
+    body->type_check();
+    return void_type();
 }
 
 Type *typcase_class::type_check() {
+    Type *expr_type = expr->type_check();
+    for (int i = cases->first(); cases->more(i); i = cases->next(i)) {
+        branch_class *branch = (branch_class *)cases->nth(i);
+        branch->type_check();
+    }
+    return expr_type;
+}
 
+Type *branch_class::type_check() {
+    symbol_table->enterscope();
+    addid(name, type_decl, line_number);
+    Type *type = expr->type_check();
+    symbol_table->exitscope();
+    return type;
 }
 
 Type *block_class::type_check() {
-
+    Type *res = void_type();
+    for (int i = body->first(); body->more(i); i = body->next(i)) {
+        res = body->nth(i)->type_check();
+    }
+    return res;
 }
 
 Type *let_class::type_check() {
-
+    symbol_table->enterscope();
+    addid(identifier, type_decl, line_number);
+    Type *init_type = init->type_check();
+    char *init_type_cstr = string2charptr(init_type->get_type_str());
+    if (!is_no_expr(init_type) && !class_table->is_subclassof(init_type_cstr, type_decl->get_string()))
+        class_table->semant_error() << "Line " << line_number << ": \'let\': incompatible types when assigning type from \'"
+            << init_type_cstr << "\' to \'" << type_decl->get_string() << "\'" << endl;
+    delete init_type_cstr;
+    body->type_check();
+    symbol_table->exitscope();
+    return void_type();
 }  
-
 
 Type *plus_class::type_check() {
-
+    Type *e1_type = e1->type_check();
+    Type *e2_type = e2->type_check();
+    Type *lca_type = class_table->lca(e1_type, e2_type);
+    if (lca_type == NULL)
+        class_table->semant_error() << "Line " << line_number << ": no match for \'operator+\' (operand types are \'"
+            << e1_type->get_type_str() << "\' and \'" << e2_type->get_type_str() << "\')" << endl;
+    return lca_type ? lca_type : e1_type;
 }  
 
-
 Type *sub_class::type_check() {
-
+    Type *e1_type = e1->type_check();
+    Type *e2_type = e2->type_check();
+    Type *lca_type = class_table->lca(e1_type, e2_type);
+    if (lca_type == NULL)
+        class_table->semant_error() << "Line " << line_number << ": no match for \'operator-\' (operand types are \'"
+            << e1_type->get_type_str() << "\' and \'" << e2_type->get_type_str() << "\')" << endl;
+    return lca_type ? lca_type : e1_type;
 }  
 
 Type *mul_class::type_check() {
-
+    Type *e1_type = e1->type_check();
+    Type *e2_type = e2->type_check();
+    Type *lca_type = class_table->lca(e1_type, e2_type);
+    if (lca_type == NULL)
+        class_table->semant_error() << "Line " << line_number << ": no match for \'operator*\' (operand types are \'"
+            << e1_type->get_type_str() << "\' and \'" << e2_type->get_type_str() << "\')" << endl;
+    return lca_type ? lca_type : e1_type;
 }  
 
-
 Type *divide_class::type_check() {
-
+    Type *e1_type = e1->type_check();
+    Type *e2_type = e2->type_check();
+    Type *lca_type = class_table->lca(e1_type, e2_type);
+    if (lca_type == NULL)
+        class_table->semant_error() << "Line " << line_number << ": no match for \'operator\/\' (operand types are \'"
+            << e1_type->get_type_str() << "\' and \'" << e2_type->get_type_str() << "\')" << endl;
+    return lca_type ? lca_type : e1_type;
 }  
 
 Type *neg_class::type_check() {
-
+    Type *e1_type = e1->type_check();
+    if (!is_int(e1_type))
+        class_table->semant_error() << "Line " << line_number << ": no match for \'operator~\' (operand type is \'"
+            << e1_type->get_type_str() << "\')" << endl;
+    return int_type();
 } 
 
 Type *lt_class::type_check() {
-
+    Type *e1_type = e1->type_check();
+    Type *e2_type = e2->type_check();
+    Type *lca_type = class_table->lca(e1_type, e2_type);
+    if (lca_type == NULL || (!is_int(lca_type) && !is_string(lca_type)))
+        class_table->semant_error() << "Line " << line_number << ": no match for \'operator<\' (operand types are\'"
+            << e1_type->get_type_str() << "\' and \'" << e2_type->get_type_str() << "\')" << endl;
+    return bool_type();
 } 
 
 
 Type *eq_class::type_check() {
-
+    Type *e1_type = e1->type_check();
+    Type *e2_type = e2->type_check();
+    Type *lca_type = class_table->lca(e1_type, e2_type);
+    if (lca_type == NULL || (!is_int(lca_type) && !is_string(lca_type)))
+        class_table->semant_error() << "Line " << line_number << ": no match for \'operator=\' (operand types are\'"
+            << e1_type->get_type_str() << "\' and \'" << e2_type->get_type_str() << "\')" << endl;
+    return bool_type();
 }  
 
 Type *leq_class::type_check() {
-
+    Type *e1_type = e1->type_check();
+    Type *e2_type = e2->type_check();
+    Type *lca_type = class_table->lca(e1_type, e2_type);
+    if (lca_type == NULL || (!is_int(lca_type) && !is_string(lca_type)))
+        class_table->semant_error() << "Line " << line_number << ": no match for \'operator<=\' (operand types are\'"
+            << e1_type->get_type_str() << "\' and \'" << e2_type->get_type_str() << "\')" << endl;
+    return bool_type();
 }  
 
 Type *comp_class::type_check() {
-
+    Type *e1_type = e1->type_check();
+    if (!is_bool(e1_type))
+        class_table->semant_error() << "Line " << line_number << ": no match for \'operator!\' (operand type is \'"
+            << e1_type->get_type_str() << "\')" << endl;
+    return bool_type();
 }  
 
 Type *int_const_class::type_check() {
-
+    return int_type();
 }  
 
-
 Type *bool_const_class::type_check() {
-
+    return bool_type();
 }  
 
 Type *string_const_class::type_check() {
-
+    return string_type();
 } 
 
 Type *new__class::type_check() {
     return new_type(type_name, line_number);
 }  
 
-
 Type *isvoid_class::type_check() {
-
+    e1->type_check();
+    return bool_type();
 }  
 
 Type *no_expr_class::type_check() {
-
+    return no_expr_type();
 } 
 
 Type *object_class::type_check() {
-
+    Type *res = lookup(name);
+    if (res == NULL)
+        class_table->semant_error() << "Line " << line_number << ": \'" << name->get_string() << "\' undeclared" << endl;
+    return res ? res : void_type();
 }  

@@ -309,6 +309,7 @@ public:
       type_decl = a2;
       expr = a3;
    }
+   Type *type_check();
    Case copy_Case();
    void dump(ostream& stream, int n);
 
