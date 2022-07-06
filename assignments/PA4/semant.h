@@ -42,7 +42,6 @@ public:
   ClassTable(Classes);
   ~ClassTable();
   bool check_inheritance(Classes);
-  bool is_subclassof(std::string&, std::string&);
   bool is_subclassof(const char *, const char *);
   Type *lca(Type *a, Type *b);
   void init_methods_info(Classes classes);

@@ -22,15 +22,17 @@ class Type {
 private:
     int type_id;
     int line_number;
-    std::string type_str;
+    char *type_str;
 public:
     int get_type_id() { return type_id; }
     int get_line_number() { return line_number; }
-    std::string& get_type_str() { return type_str; }
-    Type(int type_id, const char *type_cstr, int line_number) : type_id(type_id), line_number(line_number) {
-        int len = strlen(type_cstr);
+    char *get_type_str() { return type_str; }
+    Type(int type_id, const char *type_str, int line_number) : type_id(type_id), line_number(line_number) {
+        int len = strlen(type_str);
+        this->type_str = new char[len + 1];
         for (int i = 0; i < len; i++)
-            type_str += type_cstr[i];
+            this->type_str[i] = type_str[i];
+        this->type_str[len] = 0;
     }
 };
 typedef SymbolTable<int, Type> *PSYMT;
