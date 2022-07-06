@@ -72,6 +72,7 @@ public:
    virtual Symbol get_name() = 0;
    virtual Symbol get_parent() = 0;
    virtual void init_methods_info() = 0;
+   virtual void init_attributes_info() = 0;
    virtual bool type_check() = 0;
 
 #ifdef Class__EXTRAS
@@ -207,6 +208,7 @@ public:
    Symbol get_name();
    Symbol get_parent();
    void init_methods_info();
+   void init_attributes_info();
    bool type_check();
 
 #ifdef Class__SHARED_EXTRAS

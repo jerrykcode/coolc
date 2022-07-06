@@ -7,6 +7,7 @@
 #include "semant.h"
 #include "utilities.h"
 #include <map>
+#include <vector>
 #include <queue>
 
 extern int semant_debug;
@@ -262,6 +263,7 @@ Symbol current_class_name;
 std::map<char *, int, cmp_str_st> _str2id;
 int _id;
 std::map<char *, PMethodInfo, cmp_str_st> method_table;
+std::map<const char *, std::vector<attr_class *>, cmp_str_st> attr_table;
 std::vector<Type *> all_types_pool; //Use for delete memory
 
 inline void init(Classes classes) {
@@ -390,15 +392,20 @@ inline void add_method(Symbol class_name, Symbol method_name, PMethodInfo method
 }
 
 inline PMethodInfo get_method(Type *caller_type, Symbol method_name) {
-    char *class_str = caller_type->get_type_str();
+    const char *class_str = caller_type->get_type_str();
     char *method_str = method_name->get_string();
-    int key_len = strlen(class_str) + strlen(method_str) + 1;
-    char *key = new char[key_len];
-    strcpy(key, class_str);
-    strcpy(key + strlen(class_str), method_str);
-    PMethodInfo result = method_table[key];
-    delete key;
-    return result;
+    while (class_str) {
+        int key_len = strlen(class_str) + strlen(method_str) + 1;
+        char *key = new char[key_len];
+        strcpy(key, class_str);
+        strcpy(key + strlen(class_str), method_str);
+        PMethodInfo result = method_table[key];
+        delete key;
+        if (result)
+            return result;
+        class_str = class_table->get_parent_str(class_str);
+    }
+    return NULL;
 }
 
 inline void print_method_info(PMethodInfo info) {
@@ -420,9 +427,12 @@ void program_class::semant()
         class_table->init_methods_info(classes);
     }
 
-    for (auto it = method_table.begin(); it != method_table.end(); it++) {
-        print_method_info(it->second);
-    }
+//    for (auto it = method_table.begin(); it != method_table.end(); it++) {
+//        print_method_info(it->second);
+//    }
+
+    for (int i = classes->first(); classes->more(i); i = classes->next(i))
+        classes->nth(i)->init_attributes_info();
 
     for (int i = classes->first(); classes->more(i); i = classes->next(i)) {
         classes->nth(i)->type_check();
@@ -521,10 +531,9 @@ bool ClassTable::is_subclassof(const char *sub_class_str, const char *class_str)
     // bfs check if there is a route from sub_class_id to class_id
     std::queue<int> qq;
     qq.push(sub_class_id);
-    //bool *visit = new bool[num_vertices];
-    int *visit = new int[num_vertices];
-    memset(visit, 0, num_vertices*sizeof(int));
-    visit[sub_class_id] = 1; 
+    bool *visit = new bool[num_vertices];
+    memset(visit, 0, num_vertices*sizeof(bool));
+    visit[sub_class_id] = true; 
     bool result = false;
     while (!qq.empty()) {
         int v = qq.front();
@@ -535,7 +544,7 @@ bool ClassTable::is_subclassof(const char *sub_class_str, const char *class_str)
                 break;
             }
             if (!visit[*it]) {
-                visit[*it] = 1;
+                visit[*it] = true;
                 qq.push(*it);
             }
         }
@@ -607,6 +616,27 @@ Type *ClassTable::lca(Type *a, Type *b) {
     return NULL;
 }
 
+bool ClassTable::class_exists(char *class_name) {
+    return class2id.find(class_name) != class2id.end();
+}
+
+const char *ClassTable::get_parent_str(const char *class_str) {
+    if (class2id.find(class_str) == class2id.end())
+        return NULL;
+    int class_id = class2id[class_str];
+    if (graph[class_id].empty())
+        return NULL;
+    int parent_id = graph[class_id][0];
+    const char *parent_str;
+    for (auto it = class2id.begin(); it != class2id.end(); it++)
+        if (it->second == parent_id) {
+            parent_str = it->first;
+            break;
+        }
+    return parent_str;
+}
+
+
 Symbol class__class::get_name() {
     return name;
 }
@@ -635,7 +665,19 @@ void class__class::init_methods_info() {
         }
 }
 
+void class__class::init_attributes_info() {
+    char *class_name = name->get_string();
+    attr_class *attr;
+    for (int i = features->first(); features->more(i); i = features->next(i))
+        if (features->nth(i)->is_attribute()) {
+            attr = (attr_class *)features->nth(i);
+            attr_table[class_name].push_back(attr);
+        }
+}
+
 void method_class::init_info(Symbol class_name) {
+    if (strcmp(return_type->get_string(), "SELF_TYPE") == 0)
+        return_type = class_name;
     PMethodInfo method_info = new struct MethodInfo();
     for (int i = formals->first(); formals->more(i); i = formals->next(i))
         formals->nth(i)->add_type(method_info->formal_types);
@@ -682,10 +724,13 @@ bool class__class::type_check() {
     bool result = true;
     current_class_name = name;
     symbol_table->enterscope();
-    for (int i = features->first(); features->more(i); i = features->next(i))
-        if (features->nth(i)->is_attribute()) {
-           (( attr_class *)features->nth(i))->add_to_symbol_table();
-        }
+    const char *class_str = name->get_string();
+    while (class_str) {
+        std::vector<attr_class *>& v = attr_table[class_str];
+        for (auto it = v.begin(); it != v.end(); it++)
+            (*it)->add_to_symbol_table();
+        class_str = class_table->get_parent_str(class_str);
+    }
     for (int i = features->first(); features->more(i); i = features->next(i))
         if (features->nth(i)->is_method()) {
             if ( ! ((method_class *)features->nth(i))->type_check() ) result = false;
@@ -759,6 +804,9 @@ Type *dispatch_class::type_check() {
     Type *caller_type = expr->type_check();
     if (caller_type == NULL) {
       return NULL;
+    }
+    if (is_no_expr(caller_type)) {
+        caller_type = new_type(current_class_name, 0);
     }
     PMethodInfo method_info = get_method(caller_type, name);
     bool err = false;
@@ -871,9 +919,9 @@ Type *let_class::type_check() {
     if (!is_no_expr(init_type) && !class_table->is_subclassof(init_type_str, type_decl->get_string()))
         class_table->semant_error() << "Line " << line_number << ": \'let\': incompatible types when assigning type from \'"
             << init_type_str << "\' to \'" << type_decl->get_string() << "\'" << endl;
-    body->type_check();
+    Type *body_type = body->type_check();
     symbol_table->exitscope();
-    return void_type();
+    return body_type;
 }  
 
 Type *plus_class::type_check() {
@@ -976,6 +1024,12 @@ Type *string_const_class::type_check() {
 } 
 
 Type *new__class::type_check() {
+    if (!class_table->class_exists(type_name->get_string())) {
+        class_table->semant_error() << "Line " << line_number 
+            << ": \'" << type_name->get_string() << "\' was not declared"
+            << endl;
+        return unknown_type();
+    }
     return new_type(type_name, line_number);
 }  
 
@@ -989,6 +1043,9 @@ Type *no_expr_class::type_check() {
 } 
 
 Type *object_class::type_check() {
+    if (strcmp(name->get_string(), "self") == 0) {
+        return new_type(current_class_name, line_number);
+    }
     Type *res = lookup(name);
     if (res == NULL)
         class_table->semant_error() << "Line " << line_number << ": \'" << name->get_string() << "\' undeclared" << endl;
