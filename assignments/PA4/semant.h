@@ -52,7 +52,7 @@ public:
   ostream& semant_error(Symbol filename, tree_node *t);
 
 private:
-  bool check(std::vector<Class_> all_classes);
+  bool check(std::vector<Class_>& all_classes);
 };
 
 #endif

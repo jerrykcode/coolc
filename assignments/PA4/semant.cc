@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include "semant.h"
 #include "utilities.h"
 #include <map>
@@ -97,7 +98,8 @@ ClassTable::~ClassTable() {
 
 void ClassTable::install_basic_classes() {
 
-    // The tree package uses these globals to annotate the classes built below.
+    // The tree package uses these globals to annotate the classes bui
+    //          if x < y then 5 else 5 fi;lt below.
    // curr_lineno  = 0;
     Symbol filename = stringtable.add_string("<basic class>");
     
@@ -278,6 +280,17 @@ inline Type *new_type(Symbol type, int line_number) {
     return res;
 }
 
+inline Type *unknown_type() {
+    static Type *singleton = NULL;
+    if (singleton == NULL) {
+        char *str = "unknown";
+        _str2id[str] = _id++;
+        singleton = new Type(_id - 1, str, 0);
+        all_types_pool.push_back(singleton);
+    }
+    return singleton;
+}
+
 inline Type *void_type() {
     static Type *singleton = NULL;
     if (singleton == NULL) {
@@ -437,7 +450,7 @@ bool ClassTable::check_inheritance(Classes classes) {
     return result;
 }
 
-bool ClassTable::check(std::vector<Class_> all_classes) {
+bool ClassTable::check(std::vector<Class_>& all_classes) {
     int cnt = 0;
     for (int i = 0; i < all_classes.size(); i++) {
         Class_ class_ = all_classes[i];
@@ -485,10 +498,15 @@ bool ClassTable::check(std::vector<Class_> all_classes) {
 
 inline char *string2charptr(std::string& s) {
     int len = s.size();
+class_table->semant_error() << len << endl;
+int *testi = new int[len + 1];
     char *cs = new char[len + 1];
+class_table->semant_error() << "b" << endl;
     for (int i = 0; i < len; i++)
         cs[i] = s[i];
+class_table->semant_error() << "c" << endl;
     cs[len] = 0;
+class_table->semant_error() << "e" << endl;
     return cs;
 }
 
@@ -502,6 +520,8 @@ bool ClassTable::is_subclassof(std::string& sub_class_str, std::string& class_st
 }
 
 bool ClassTable::is_subclassof(const char *sub_class_cstr, const char *class_cstr) {
+    if (strcmp(sub_class_cstr, class_cstr) == 0)
+        return true;
     if (class2id.find(sub_class_cstr) == class2id.end()) {
         return false;
     }
@@ -514,9 +534,10 @@ bool ClassTable::is_subclassof(const char *sub_class_cstr, const char *class_cst
     // bfs check if there is a route from sub_class_id to class_id
     std::queue<int> qq;
     qq.push(sub_class_id);
-    bool *visit = new bool[num_vertices];
-    memset(visit, 0, num_vertices);
-    visit[sub_class_id] = true;
+    //bool *visit = new bool[num_vertices];
+    int *visit = new int[num_vertices];
+    memset(visit, 0, num_vertices*sizeof(int));
+    visit[sub_class_id] = 1; 
     bool result = false;
     while (!qq.empty()) {
         int v = qq.front();
@@ -527,14 +548,14 @@ bool ClassTable::is_subclassof(const char *sub_class_cstr, const char *class_cst
                 break;
             }
             if (!visit[*it]) {
-                visit[*it] = true;
+                visit[*it] = 1;
                 qq.push(*it);
             }
         }
         if (result) break;
     }
     while (!qq.empty()) qq.pop();
-    std::queue<int>().swap(qq);
+    //std::queue<int>().swap(qq);
     delete visit;
     return result;
 }
@@ -655,6 +676,10 @@ bool attr_class::is_method() { return false; }
 //type check
 //
 
+inline bool is_unknown(Type *type) {
+    return type->get_type_id() == unknown_type()->get_type_id();
+}
+
 inline bool is_bool(Type *type) {
     return type->get_type_id() == bool_type()->get_type_id();
 }
@@ -698,7 +723,29 @@ bool method_class::type_check() {
     int n_errors = class_table->errors();
     for (int i = formals->first(); formals->more(i); i = formals->next(i)) 
         formals->nth(i)->add_to_symbol_table();
-    expr->type_check();
+    Type *expr_type = expr->type_check();
+class_table->semant_error() << "0" << endl;
+    char *expr_type_cstr = string2charptr(expr_type->get_type_str());
+class_table->semant_error() << "1: " << expr_type_cstr
+ << "  " << return_type->get_string() << endl;
+
+    if (!class_table->is_subclassof(expr_type_cstr, return_type->get_string())) {
+class_table->semant_error() << "1.1" << endl;
+        char *no_expr_cstr = string2charptr(no_expr_type()->get_type_str());
+        char *void_cstr = string2charptr(void_type()->get_type_str());
+        
+        class_table->semant_error() << "Line " << line_number << ": in method \'" << name->get_string()
+            << "\': incompatible types when returnning type \'" 
+            << (strcmp(expr_type_cstr, no_expr_cstr) ? expr_type_cstr : void_cstr)
+            << "\' but \'" << return_type->get_string() << "\' was expected" << endl;
+
+        delete no_expr_cstr;
+        delete void_cstr;
+    }
+class_table->semant_error() << "2" << endl;
+
+    delete expr_type_cstr;
+
     symbol_table->exitscope();
     return n_errors == class_table->errors();
 }
@@ -746,6 +793,7 @@ Type *dispatch_class::type_check() {
     if (method_info == NULL) {
         class_table->semant_error() << "Line " << line_number << ": Method \'" << name->get_string()
             << "\' undeclared in class \'" << caller_type->get_type_str() << "\'" << endl;
+        return unknown_type();
     }
     else {
         int i;
@@ -778,6 +826,7 @@ Type *static_dispatch_class::type_check() {
     if (method_info == NULL) {
         class_table->semant_error() << "Line " << line_number << ": Method \'" << name->get_string()
             << "\' undeclared in class \'" << type_name->get_string() << "\'" << endl;
+        return unknown_type();
     }
     else {
         bool err = false;
@@ -974,5 +1023,5 @@ Type *object_class::type_check() {
     Type *res = lookup(name);
     if (res == NULL)
         class_table->semant_error() << "Line " << line_number << ": \'" << name->get_string() << "\' undeclared" << endl;
-    return res ? res : void_type();
+    return res ? res : unknown_type();
 }  
