@@ -18,18 +18,29 @@ Class Main {
 
 class D inherits C {
     f1(c:C, d:D): D {
-        
+        self
     };
     
-    f2(): D {
-
+    f2(x:Int): D {
+        {
+            let x : Int <- 3 in {
+                while x < 100 loop
+                    x <- x + 1
+                pool;
+                self;
+            };
+        }
     };
 
     f3() : Bool {
-
+        let x:Bool in {
+            x
+        }
     };
 
-    f4(x:Int, c: C, d:D, o:Object) : Object {};
+    f4(x:Int, c: C, d:D, o:Object) : Object {
+        self
+    };
 
 };
 

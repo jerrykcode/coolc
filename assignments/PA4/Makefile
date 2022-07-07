@@ -26,7 +26,8 @@ BFLAGS = -d -v -y -b cool --debug -p cool_yy
 ASTBFLAGS = -d -v -y -b ast --debug -p ast_yy
 
 CC=g++
-CFLAGS=-std=c++11 -g -Wall -Wno-unused -Wno-write-strings -Wno-deprecated ${CPPINCLUDE} -DDEBUG
+DEBUG=-g
+CFLAGS=${DEBUG} -std=c++11 -g -Wall -Wno-unused -Wno-write-strings -Wno-deprecated ${CPPINCLUDE} -DDEBUG
 FLEX=flex ${FFLAGS}
 BISON= bison ${BFLAGS}
 DEPEND = ${CC} -MM ${CPPINCLUDE}

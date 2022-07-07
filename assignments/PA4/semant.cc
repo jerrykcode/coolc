@@ -262,7 +262,7 @@ PSYMT symbol_table;
 Symbol current_class_name;
 std::map<char *, int, cmp_str_st> _str2id;
 int _id;
-std::map<char *, PMethodInfo, cmp_str_st> method_table;
+std::map<const char *, PMethodInfo, cmp_str_st> method_table;
 std::map<const char *, std::vector<attr_class *>, cmp_str_st> attr_table;
 std::vector<Type *> all_types_pool; //Use for delete memory
 
@@ -348,6 +348,17 @@ inline Type *string_type() {
     return singleton;
 }
 
+inline Type *self_type() {
+    static Type *singleton = NULL;
+    if (singleton == NULL) {
+        char *str = "self";
+        _str2id[str] = _id++;
+        singleton = new Type(_id - 1, str, 0);
+        all_types_pool.push_back(singleton);
+    }
+    return singleton;
+}
+
 inline void addid(Symbol name, Symbol type, int line_number) {
     if (_str2id.find(name->get_string()) == _str2id.end())
         _str2id[name->get_string()] = _id++;
@@ -399,7 +410,18 @@ inline PMethodInfo get_method(Type *caller_type, Symbol method_name) {
         char *key = new char[key_len];
         strcpy(key, class_str);
         strcpy(key + strlen(class_str), method_str);
-        PMethodInfo result = method_table[key];
+        key[key_len - 1] = 0;
+        //PMethodInfo result = method_table[key];
+        //?????? I can't believe that method_table[key] cannot find the key
+        //       
+        PMethodInfo result = NULL;
+        for (auto it = method_table.begin(); it != method_table.end(); it++) {
+            if (strcmp(it->first, key) == 0) {
+                result = it->second;
+                break;
+            }
+        }
+        //
         delete key;
         if (result)
             return result;
@@ -576,8 +598,9 @@ Type *ClassTable::lca(Type *a, Type *b) {
     }
     int b_id = class2id[b_str];
     int src, v, *d;
-    for (src = a_id, d = dist[0];  ; src = b_id, d = dist[1]) { // only loop 2 times
-        d = new int[num_vertices];
+    for (src = a_id;  ; src = b_id, dist++) { // only loop 2 times
+        *dist = new int[num_vertices];
+        d = *dist;
         memset(d, 0xff, num_vertices * sizeof(int)); //fill with -1
         d[src] = 0;
         qq.push(src);
@@ -593,6 +616,7 @@ Type *ClassTable::lca(Type *a, Type *b) {
         }
         if (src == b_id) break;
     }
+    dist--;
     std::queue<int>().swap(qq);
     int lca_id = -1;
     const char *lca_str;
@@ -600,7 +624,7 @@ Type *ClassTable::lca(Type *a, Type *b) {
     for (auto it = class2id.begin(); it != class2id.end(); it++) {
         id = it->second;
         if (dist[0][id] != -1 && dist[1][id] != -1)
-            if (dist[0][id] == dist[1][id] && (lca_id == -1 || dist[0][id] < lca_id)) {
+            if (lca_id == -1 || dist[0][id] < lca_id) {
                 lca_id = id;
                 lca_str = it->first;
             }
@@ -676,8 +700,6 @@ void class__class::init_attributes_info() {
 }
 
 void method_class::init_info(Symbol class_name) {
-    if (strcmp(return_type->get_string(), "SELF_TYPE") == 0)
-        return_type = class_name;
     PMethodInfo method_info = new struct MethodInfo();
     for (int i = formals->first(); formals->more(i); i = formals->next(i))
         formals->nth(i)->add_type(method_info->formal_types);
@@ -720,6 +742,10 @@ inline bool is_no_expr(Type *type) {
     return type->get_type_id() == no_expr_type()->get_type_id();
 }
 
+inline bool is_self(Type *type) {
+    return type->get_type_id() == self_type()->get_type_id();
+}
+
 bool class__class::type_check() {
     bool result = true;
     current_class_name = name;
@@ -752,15 +778,30 @@ bool method_class::type_check() {
         formals->nth(i)->add_to_symbol_table();
     Type *expr_type = expr->type_check();
     char *expr_type_str = expr_type->get_type_str();
+    char *no_expr_str = no_expr_type()->get_type_str();
+    char *void_str = void_type()->get_type_str();
 
-    if (!class_table->is_subclassof(expr_type_str, return_type->get_string())) {
-        char *no_expr_str = no_expr_type()->get_type_str();
-        char *void_str = void_type()->get_type_str();
-        
-        class_table->semant_error() << "Line " << line_number << ": in method \'" << name->get_string()
-            << "\': incompatible types when returnning type \'" 
-            << (strcmp(expr_type_str, no_expr_str) ? expr_type_str : void_str)
-            << "\' but \'" << return_type->get_string() << "\' was expected" << endl;
+    if (strcmp(return_type->get_string(), "SELF_TYPE") == 0) {
+        if (!is_self(expr_type)) {
+            class_table->semant_error() << "Line " << line_number << ": in method \'" << name->get_string()
+                << "\': incompatible types when returnning type \'"
+                << (strcmp(expr_type_str, no_expr_str) ? expr_type_str : void_str)
+                << "\' but \'SELF_TYPE\'  was expected" << endl;
+        }
+    }
+    else {
+
+        if (is_self(expr_type)) {
+            expr_type = new_type(current_class_name, 0);
+            expr_type_str = expr_type->get_type_str();
+        }
+     
+        if (!class_table->is_subclassof(expr_type_str, return_type->get_string())) {
+            class_table->semant_error() << "Line " << line_number << ": in method \'" << name->get_string()
+                << "\': incompatible types when returnning type \'" 
+                << (strcmp(expr_type_str, no_expr_str) ? expr_type_str : void_str)
+                << "\' but \'" << return_type->get_string() << "\' was expected" << endl;
+        }
     }
 
     symbol_table->exitscope();
@@ -802,10 +843,7 @@ Type *assign_class::type_check() {
 
 Type *dispatch_class::type_check() {
     Type *caller_type = expr->type_check();
-    if (caller_type == NULL) {
-      return NULL;
-    }
-    if (is_no_expr(caller_type)) {
+    if (is_no_expr(caller_type) || is_self(caller_type)) {
         caller_type = new_type(current_class_name, 0);
     }
     PMethodInfo method_info = get_method(caller_type, name);
@@ -817,9 +855,15 @@ Type *dispatch_class::type_check() {
     }
     else {
         int i;
+        Type *actual_type;
+        char *actual_str;
         for (i = actual->first(); actual->more(i); i = actual->next(i)) {
             if (i >= method_info->formal_types.size()) { err = true; break; }
-            if (strcmp(actual->nth(i)->type_check()->get_type_str(), method_info->formal_types[i]->get_string())) { 
+            actual_type = actual->nth(i)->type_check();
+            actual_str = actual_type->get_type_str();
+            if (is_self(actual_type))
+                actual_str = current_class_name->get_string();
+            if (strcmp(actual_str, method_info->formal_types[i]->get_string())) { 
                 err = true; break; 
             }
         }
@@ -828,19 +872,24 @@ Type *dispatch_class::type_check() {
             class_table->semant_error() << "Line " << line_number << ": Method \'" << name->get_string() 
                 << "\': incompatible type for argument" << endl;
     }
-    return new_type(method_info->return_type, line_number);
+    if (strcmp(method_info->return_type->get_string(), "SELF_TYPE") == 0)
+        return caller_type;
+    else
+        return new_type(method_info->return_type, line_number);
 }
 
 
 Type *static_dispatch_class::type_check() {
     Type *caller_type = expr->type_check();
+    if (is_self(caller_type)) 
+        caller_type = new_type(current_class_name, 0);
     char *caller_str = caller_type->get_type_str();
     if (!class_table->is_subclassof(caller_str, type_name->get_string())) {
         class_table->semant_error() << "Line " << line_number << ": class \'" << caller_type->get_type_str()
             << "\' is not a descendant of class \'" << type_name->get_string() << "\'" << endl;
-        return NULL; 
     }
-    PMethodInfo method_info = get_method(new_type(type_name, line_number), name);
+    Type *caller_parent_type = new_type(type_name, line_number);
+    PMethodInfo method_info = get_method(caller_parent_type, name);
     if (method_info == NULL) {
         class_table->semant_error() << "Line " << line_number << ": Method \'" << name->get_string()
             << "\' undeclared in class \'" << type_name->get_string() << "\'" << endl;
@@ -849,9 +898,15 @@ Type *static_dispatch_class::type_check() {
     else {
         bool err = false;
         int i;
+        Type *actual_type;
+        char *actual_str;
         for (i = actual->first(); actual->more(i); i = actual->next(i)) {
             if (i >= method_info->formal_types.size()) { err = true; break; }
-            if (strcmp(actual->nth(i)->type_check()->get_type_str(), method_info->formal_types[i]->get_string())) {
+            actual_type = actual->nth(i)->type_check();
+            actual_str = actual_type->get_type_str();
+            if (is_self(actual_type))
+                actual_str = current_class_name->get_string();
+            if (strcmp(actual_str, method_info->formal_types[i]->get_string())) {
                 err = true; break;
             }
         }
@@ -859,7 +914,9 @@ Type *static_dispatch_class::type_check() {
             class_table->semant_error() << "Line " << line_number << ": Method \'" << name->get_string() 
                 << "\': incompatible type for argument" << endl;
     }
-    return new_type(method_info->return_type, line_number);
+    if (strcmp(method_info->return_type->get_string(), "SELF_TYPE") == 0)
+        return caller_parent_type;
+    else return new_type(method_info->return_type, line_number);
 }
 
 Type *cond_class::type_check() {
@@ -1044,7 +1101,7 @@ Type *no_expr_class::type_check() {
 
 Type *object_class::type_check() {
     if (strcmp(name->get_string(), "self") == 0) {
-        return new_type(current_class_name, line_number);
+        return self_type();
     }
     Type *res = lookup(name);
     if (res == NULL)
