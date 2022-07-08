@@ -272,11 +272,19 @@ inline void init(Classes classes) {
     _id = 0;
 }
 
-inline Type *new_type(Symbol type, int line_number) {
-    if (_str2id.find(type->get_string()) == _str2id.end())
-        _str2id[type->get_string()] = _id++;
+inline int func_str2id(char *str) {
+    int id;
+    auto it = _str2id.find(str);
+    if (it == _str2id.end()) {
+        id = _id++;
+        _str2id[str] = id;
+    }
+    else id = it->second;
+    return id;
+}
 
-    int type_id = _str2id[type->get_string()];
+inline Type *new_type(Symbol type, int line_number) {
+    int type_id = func_str2id(type->get_string());
     Type *res = new Type(type_id, type->get_string(), line_number);
     all_types_pool.push_back(res);
     return res;
@@ -286,8 +294,7 @@ inline Type *unknown_type() {
     static Type *singleton = NULL;
     if (singleton == NULL) {
         char *str = "unknown";
-        _str2id[str] = _id++;
-        singleton = new Type(_id - 1, str, 0);
+        singleton = new Type(func_str2id(str), str, 0);
         all_types_pool.push_back(singleton);
     }
     return singleton;
@@ -297,8 +304,7 @@ inline Type *void_type() {
     static Type *singleton = NULL;
     if (singleton == NULL) {
         char *str = "void";
-        _str2id[str] = _id++;
-        singleton = new Type(_id - 1, str, 0);
+        singleton = new Type(func_str2id(str), str, 0);
         all_types_pool.push_back(singleton);
     }
     return singleton;
@@ -308,8 +314,7 @@ inline Type *no_expr_type() {
     static Type *singleton = NULL;
     if (singleton == NULL) {
         char *str = "no_expr";
-        _str2id[str] = _id++;
-        singleton = new Type(_id - 1, str, 0);
+        singleton = new Type(func_str2id(str), str, 0);
         all_types_pool.push_back(singleton);
     }
     return singleton;
@@ -319,8 +324,7 @@ inline Type *bool_type() {
     static Type *singleton = NULL;
     if (singleton == NULL) {
         char *str = "Bool";
-        _str2id[str] = _id++;
-        singleton = new Type(_id - 1, str, 0);
+        singleton = new Type(func_str2id(str), str, 0);
         all_types_pool.push_back(singleton);
     }
     return singleton;
@@ -330,8 +334,7 @@ inline Type *int_type() {
     static Type *singleton = NULL;
     if (singleton == NULL) {
         char *str = "Int";
-        _str2id[str] = _id++;
-        singleton = new Type(_id - 1, str, 0);
+        singleton = new Type(func_str2id(str), str, 0);
         all_types_pool.push_back(singleton);
     }
     return singleton;
@@ -341,8 +344,7 @@ inline Type *string_type() {
     static Type *singleton = NULL;
     if (singleton == NULL) {
         char *str = "String";
-        _str2id[str] = _id++;
-        singleton = new Type(_id - 1, str, 0);
+        singleton = new Type(func_str2id(str), str, 0);
         all_types_pool.push_back(singleton);
     }
     return singleton;
@@ -352,21 +354,15 @@ inline Type *self_type() {
     static Type *singleton = NULL;
     if (singleton == NULL) {
         char *str = "self";
-        _str2id[str] = _id++;
-        singleton = new Type(_id - 1, str, 0);
+        singleton = new Type(func_str2id(str), str, 0);
         all_types_pool.push_back(singleton);
     }
     return singleton;
 }
 
 inline void addid(Symbol name, Symbol type, int line_number) {
-    if (_str2id.find(name->get_string()) == _str2id.end())
-        _str2id[name->get_string()] = _id++;
-    if (_str2id.find(type->get_string()) == _str2id.end())
-        _str2id[type->get_string()] = _id++;
-
-    int name_id = _str2id[name->get_string()];
-    int type_id = _str2id[type->get_string()];
+    int name_id = func_str2id(name->get_string());
+    int type_id = func_str2id(type->get_string());
 
     Type *previous = symbol_table->probe(name_id);
     if (previous != NULL)
@@ -443,7 +439,6 @@ void program_class::semant()
     init(classes);
 
     /* some semantic analysis code may go here */
-    // assignment PA4
 
     if (class_table->check_inheritance(classes)) {
         class_table->init_methods_info(classes);
@@ -822,9 +817,9 @@ Type *assign_class::type_check() {
     Type *expr_type = expr->type_check();
     if (var_type) {
         if (class_table->is_subclassof(expr_type->get_type_str(), var_type->get_type_str())) {
-            if (expr_type->get_type_id() != var_type->get_type_id()) {
-                symbol_table->addid(_str2id[name->get_string()], expr_type);
-            }
+      //      if (expr_type->get_type_id() != var_type->get_type_id()) {
+      //          symbol_table->addid(_str2id[name->get_string()], expr_type);
+      //      }
         }  
         else
             class_table->semant_error() << "Line " << line_number << ": incompatible types when assigning to type \'"
@@ -923,8 +918,14 @@ Type *cond_class::type_check() {
     Type *pred_type = pred->type_check();
     if (pred_type && ! is_bool(pred_type))
         class_table->semant_error() << "Line " << line_number << ": \'if\' condition: not a boolean expression" << endl;
+    symbol_table->enterscope();
     Type *then_type = then_exp->type_check();
+    symbol_table->exitscope();
+
+    symbol_table->enterscope();
     Type *else_type = else_exp->type_check();
+    symbol_table->exitscope();
+
     Type *lca_type = class_table->lca(then_type, else_type);
 
     if (lca_type == NULL) {
@@ -939,8 +940,10 @@ Type *loop_class::type_check() {
     Type *pred_type = pred->type_check();
     if (!is_bool(pred_type))
         class_table->semant_error() << "Line " << line_number << ": \'while\' loop: not a boolean expression" << endl;
-    body->type_check();
-    return void_type();
+    symbol_table->enterscope();
+    Type *res = body->type_check();
+    symbol_table->exitscope();
+    return res;
 }
 
 Type *typcase_class::type_check() {
@@ -961,10 +964,12 @@ Type *branch_class::type_check() {
 }
 
 Type *block_class::type_check() {
+    symbol_table->enterscope();
     Type *res = void_type();
     for (int i = body->first(); body->more(i); i = body->next(i)) {
         res = body->nth(i)->type_check();
     }
+    symbol_table->exitscope();
     return res;
 }
 
