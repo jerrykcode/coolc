@@ -266,6 +266,12 @@ std::map<const char *, PMethodInfo, cmp_str_st> method_table;
 std::map<const char *, std::vector<attr_class *>, cmp_str_st> attr_table;
 std::vector<Type *> all_types_pool; //Use for delete memory
 
+
+int last_expr_id = 0;
+bool last_dispatch_return_self;
+int last_dispatch_id;
+
+
 inline void init(Classes classes) {
     class_table = new ClassTable(classes);
     symbol_table = new SymbolTable<int, Type>();
@@ -534,16 +540,29 @@ int *testi = new int[len + 1];
 
 
 bool ClassTable::is_subclassof(const char *sub_class_str, const char *class_str) {
+
     if (strcmp(sub_class_str, class_str) == 0)
         return true;
-    if (class2id.find(sub_class_str) == class2id.end()) {
-        return false;
+   
+    int sub_class_id, class_id;
+
+    if (strcmp(sub_class_str, self_type()->get_type_str()) == 0)
+        sub_class_id = class2id[current_class_name->get_string()];
+    else {
+        if (class2id.find(sub_class_str) == class2id.end()) {
+            return false;
+        }
+        sub_class_id = class2id[sub_class_str];
     }
-    int sub_class_id = class2id[sub_class_str];
-    if (class2id.find(class_str) == class2id.end()) {
-        return false;
+
+    if (strcmp(class_str, self_type()->get_type_str()) == 0)
+        class_id = class2id[current_class_name->get_string()];
+    else {
+        if (class2id.find(class_str) == class2id.end()) {
+            return false;
+        }
+        class_id = class2id[class_str];
     }
-    int class_id = class2id[class_str];
 
     // bfs check if there is a route from sub_class_id to class_id
     std::queue<int> qq;
@@ -573,25 +592,29 @@ bool ClassTable::is_subclassof(const char *sub_class_str, const char *class_str)
     return result;
 }
 
+inline bool is_self(Type *type); //Line 761
+
 Type *ClassTable::lca(Type *a, Type *b) {
     if (a->get_type_id() == b->get_type_id()) //same type
         return a;
     int **dist = new int*[2];
     std::queue<int> qq;
-    char *a_str = a->get_type_str();
+    char *a_str = is_self(a) ? current_class_name->get_string() : a->get_type_str();
     if (class2id.find(a_str) == class2id.end()) {
         delete dist;
         std::queue<int>().swap(qq);
         return NULL;
     }
     int a_id = class2id[a_str];
-    char *b_str = b->get_type_str();
+    char *b_str = is_self(b) ? current_class_name->get_string() : b->get_type_str();
     if (class2id.find(b_str) == class2id.end()) {
         delete dist;
         std::queue<int>().swap(qq);
         return NULL;
     }
     int b_id = class2id[b_str];
+    if (a_id == b_id)
+        return ( ! is_self(a)) ? a : (( ! is_self(b) ? b : new_type(current_class_name, 0) ));
     int src, v, *d;
     for (src = a_id;  ; src = b_id, dist++) { // only loop 2 times
         *dist = new int[num_vertices];
@@ -619,7 +642,7 @@ Type *ClassTable::lca(Type *a, Type *b) {
     for (auto it = class2id.begin(); it != class2id.end(); it++) {
         id = it->second;
         if (dist[0][id] != -1 && dist[1][id] != -1)
-            if (lca_id == -1 || dist[0][id] < lca_id) {
+            if (lca_id == -1 || dist[0][id] < dist[0][lca_id]) {
                 lca_id = id;
                 lca_str = it->first;
             }
@@ -778,10 +801,16 @@ bool method_class::type_check() {
 
     if (strcmp(return_type->get_string(), "SELF_TYPE") == 0) {
         if (!is_self(expr_type)) {
-            class_table->semant_error() << "Line " << line_number << ": in method \'" << name->get_string()
-                << "\': incompatible types when returnning type \'"
-                << (strcmp(expr_type_str, no_expr_str) ? expr_type_str : void_str)
-                << "\' but \'SELF_TYPE\'  was expected" << endl;
+            if ( ! /* NOT */
+                    (last_expr_id == last_dispatch_id /* last expression in this method is dispatch */
+                    && last_dispatch_return_self /* the dispatch returns 'self' */ )
+               ) {
+                
+                class_table->semant_error() << "Line " << line_number << ": in method \'" << name->get_string()
+                    << "\': incompatible types when returnning type \'"
+                    << (strcmp(expr_type_str, no_expr_str) ? expr_type_str : void_str)
+                    << "\' but \'SELF_TYPE\'  was expected" << endl;
+            }
         }
     }
     else {
@@ -807,8 +836,12 @@ void formal_class::add_to_symbol_table() {
     addid(name, type_decl, line_number);
 }
 
+Type *Expression_class::type_check() {
+    last_expr_id++;
+    return expr_type_check();
+} 
 
-Type *assign_class::type_check() {
+Type *assign_class::expr_type_check() {
     // name <- expr
     Type *var_type = lookup(name);
     if (var_type == NULL)
@@ -836,7 +869,7 @@ Type *assign_class::type_check() {
     return true;
 }*/
 
-Type *dispatch_class::type_check() {
+Type *dispatch_class::expr_type_check() {
     Type *caller_type = expr->type_check();
     if (is_no_expr(caller_type) || is_self(caller_type)) {
         caller_type = new_type(current_class_name, 0);
@@ -858,7 +891,7 @@ Type *dispatch_class::type_check() {
             actual_str = actual_type->get_type_str();
             if (is_self(actual_type))
                 actual_str = current_class_name->get_string();
-            if (strcmp(actual_str, method_info->formal_types[i]->get_string())) { 
+            if ( ! class_table->is_subclassof(actual_str, method_info->formal_types[i]->get_string())) { 
                 err = true; break; 
             }
         }
@@ -867,14 +900,19 @@ Type *dispatch_class::type_check() {
             class_table->semant_error() << "Line " << line_number << ": Method \'" << name->get_string() 
                 << "\': incompatible type for argument" << endl;
     }
-    if (strcmp(method_info->return_type->get_string(), "SELF_TYPE") == 0)
+    last_dispatch_id = last_expr_id;
+    if (strcmp(method_info->return_type->get_string(), "SELF_TYPE") == 0) {
+        last_dispatch_return_self = true;
         return caller_type;
-    else
+    }
+    else {
+        last_dispatch_return_self = false;
         return new_type(method_info->return_type, line_number);
+    }
 }
 
 
-Type *static_dispatch_class::type_check() {
+Type *static_dispatch_class::expr_type_check() {
     Type *caller_type = expr->type_check();
     if (is_self(caller_type)) 
         caller_type = new_type(current_class_name, 0);
@@ -901,7 +939,7 @@ Type *static_dispatch_class::type_check() {
             actual_str = actual_type->get_type_str();
             if (is_self(actual_type))
                 actual_str = current_class_name->get_string();
-            if (strcmp(actual_str, method_info->formal_types[i]->get_string())) {
+            if ( ! class_table->is_subclassof(actual_str, method_info->formal_types[i]->get_string())) {
                 err = true; break;
             }
         }
@@ -909,12 +947,18 @@ Type *static_dispatch_class::type_check() {
             class_table->semant_error() << "Line " << line_number << ": Method \'" << name->get_string() 
                 << "\': incompatible type for argument" << endl;
     }
-    if (strcmp(method_info->return_type->get_string(), "SELF_TYPE") == 0)
+    last_dispatch_id = last_expr_id;
+    if (strcmp(method_info->return_type->get_string(), "SELF_TYPE") == 0) {
+        last_dispatch_return_self = true;
         return caller_parent_type;
-    else return new_type(method_info->return_type, line_number);
+    }
+    else {
+        last_dispatch_return_self = false;
+        return new_type(method_info->return_type, line_number);
+    }
 }
 
-Type *cond_class::type_check() {
+Type *cond_class::expr_type_check() {
     Type *pred_type = pred->type_check();
     if (pred_type && ! is_bool(pred_type))
         class_table->semant_error() << "Line " << line_number << ": \'if\' condition: not a boolean expression" << endl;
@@ -936,7 +980,7 @@ Type *cond_class::type_check() {
     return lca_type;
 }
 
-Type *loop_class::type_check() {
+Type *loop_class::expr_type_check() {
     Type *pred_type = pred->type_check();
     if (!is_bool(pred_type))
         class_table->semant_error() << "Line " << line_number << ": \'while\' loop: not a boolean expression" << endl;
@@ -946,7 +990,7 @@ Type *loop_class::type_check() {
     return res;
 }
 
-Type *typcase_class::type_check() {
+Type *typcase_class::expr_type_check() {
     Type *expr_type = expr->type_check();
     for (int i = cases->first(); cases->more(i); i = cases->next(i)) {
         branch_class *branch = (branch_class *)cases->nth(i);
@@ -963,7 +1007,7 @@ Type *branch_class::type_check() {
     return type;
 }
 
-Type *block_class::type_check() {
+Type *block_class::expr_type_check() {
     symbol_table->enterscope();
     Type *res = void_type();
     for (int i = body->first(); body->more(i); i = body->next(i)) {
@@ -973,7 +1017,7 @@ Type *block_class::type_check() {
     return res;
 }
 
-Type *let_class::type_check() {
+Type *let_class::expr_type_check() {
     symbol_table->enterscope();
     addid(identifier, type_decl, line_number);
     Type *init_type = init->type_check();
@@ -986,7 +1030,7 @@ Type *let_class::type_check() {
     return body_type;
 }  
 
-Type *plus_class::type_check() {
+Type *plus_class::expr_type_check() {
     Type *e1_type = e1->type_check();
     Type *e2_type = e2->type_check();
     Type *lca_type = class_table->lca(e1_type, e2_type);
@@ -996,7 +1040,7 @@ Type *plus_class::type_check() {
     return lca_type ? lca_type : e1_type;
 }  
 
-Type *sub_class::type_check() {
+Type *sub_class::expr_type_check() {
     Type *e1_type = e1->type_check();
     Type *e2_type = e2->type_check();
     Type *lca_type = class_table->lca(e1_type, e2_type);
@@ -1006,7 +1050,7 @@ Type *sub_class::type_check() {
     return lca_type ? lca_type : e1_type;
 }  
 
-Type *mul_class::type_check() {
+Type *mul_class::expr_type_check() {
     Type *e1_type = e1->type_check();
     Type *e2_type = e2->type_check();
     Type *lca_type = class_table->lca(e1_type, e2_type);
@@ -1016,7 +1060,7 @@ Type *mul_class::type_check() {
     return lca_type ? lca_type : e1_type;
 }  
 
-Type *divide_class::type_check() {
+Type *divide_class::expr_type_check() {
     Type *e1_type = e1->type_check();
     Type *e2_type = e2->type_check();
     Type *lca_type = class_table->lca(e1_type, e2_type);
@@ -1026,7 +1070,7 @@ Type *divide_class::type_check() {
     return lca_type ? lca_type : e1_type;
 }  
 
-Type *neg_class::type_check() {
+Type *neg_class::expr_type_check() {
     Type *e1_type = e1->type_check();
     if (!is_int(e1_type))
         class_table->semant_error() << "Line " << line_number << ": no match for \'operator~\' (operand type is \'"
@@ -1034,7 +1078,7 @@ Type *neg_class::type_check() {
     return int_type();
 } 
 
-Type *lt_class::type_check() {
+Type *lt_class::expr_type_check() {
     Type *e1_type = e1->type_check();
     Type *e2_type = e2->type_check();
     Type *lca_type = class_table->lca(e1_type, e2_type);
@@ -1045,17 +1089,17 @@ Type *lt_class::type_check() {
 } 
 
 
-Type *eq_class::type_check() {
+Type *eq_class::expr_type_check() {
     Type *e1_type = e1->type_check();
     Type *e2_type = e2->type_check();
     Type *lca_type = class_table->lca(e1_type, e2_type);
-    if (lca_type == NULL || (!is_int(lca_type) && !is_string(lca_type)))
+    if (lca_type == NULL)
         class_table->semant_error() << "Line " << line_number << ": no match for \'operator=\' (operand types are\'"
             << e1_type->get_type_str() << "\' and \'" << e2_type->get_type_str() << "\')" << endl;
     return bool_type();
 }  
 
-Type *leq_class::type_check() {
+Type *leq_class::expr_type_check() {
     Type *e1_type = e1->type_check();
     Type *e2_type = e2->type_check();
     Type *lca_type = class_table->lca(e1_type, e2_type);
@@ -1065,7 +1109,7 @@ Type *leq_class::type_check() {
     return bool_type();
 }  
 
-Type *comp_class::type_check() {
+Type *comp_class::expr_type_check() {
     Type *e1_type = e1->type_check();
     if (!is_bool(e1_type))
         class_table->semant_error() << "Line " << line_number << ": no match for \'operator!\' (operand type is \'"
@@ -1073,19 +1117,19 @@ Type *comp_class::type_check() {
     return bool_type();
 }  
 
-Type *int_const_class::type_check() {
+Type *int_const_class::expr_type_check() {
     return int_type();
 }  
 
-Type *bool_const_class::type_check() {
+Type *bool_const_class::expr_type_check() {
     return bool_type();
 }  
 
-Type *string_const_class::type_check() {
+Type *string_const_class::expr_type_check() {
     return string_type();
 } 
 
-Type *new__class::type_check() {
+Type *new__class::expr_type_check() {
     if (!class_table->class_exists(type_name->get_string())) {
         class_table->semant_error() << "Line " << line_number 
             << ": \'" << type_name->get_string() << "\' was not declared"
@@ -1095,16 +1139,16 @@ Type *new__class::type_check() {
     return new_type(type_name, line_number);
 }  
 
-Type *isvoid_class::type_check() {
+Type *isvoid_class::expr_type_check() {
     e1->type_check();
     return bool_type();
 }  
 
-Type *no_expr_class::type_check() {
+Type *no_expr_class::expr_type_check() {
     return no_expr_type();
 } 
 
-Type *object_class::type_check() {
+Type *object_class::expr_type_check() {
     if (strcmp(name->get_string(), "self") == 0) {
         return self_type();
     }

@@ -124,6 +124,10 @@
     
     /*  DON'T CHANGE ANYTHING ABOVE THIS LINE, OR YOUR PARSER WONT WORK       */
     /**************************************************************************/
+
+    %left '=' '<'  LE
+    %left '+' '-'
+    %left '*' '/'
     
     /* Complete the nonterminal list below, giving a type for the semantic
     value of each non terminal. (See section 3.6 in the bison 
@@ -158,14 +162,14 @@
     %type <expression> let
     %type <expression> next_let
     %type <expression> typcase
+    %type <expression> lt
+    %type <expression> eq
+    %type <expression> leq
     %type <expression> plus
     %type <expression> sub
     %type <expression> mul
     %type <expression> divide
     %type <expression> neg
-    %type <expression> lt
-    %type <expression> eq
-    %type <expression> leq
     %type <expression> int_const
     %type <expression> bool_const
     %type <expression> str_const
@@ -383,6 +387,18 @@
     { $$ = branch($1, $3, $5); }
     ;
 
+    lt: expression '<' expression
+    { $$ = lt($1, $3); }
+    ;
+
+    eq: expression '=' expression
+    { $$ = eq($1, $3); }
+    ;
+
+    leq: expression LE expression
+    { $$ = leq($1, $3); }
+    ;
+
     plus: expression '+' expression
     { $$ = plus($1, $3); }
     ;
@@ -401,18 +417,6 @@
 
     neg: '~' expression
     { $$ = neg($2); }
-    ;
-
-    lt: expression '<' expression
-    { $$ = lt($1, $3); }
-    ;
-
-    eq: expression '=' expression
-    { $$ = eq($1, $3); }
-    ;
-
-    leq: expression LE expression
-    { $$ = leq($1, $3); }
     ;
 
     int_const: INT_CONST

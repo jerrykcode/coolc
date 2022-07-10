@@ -120,7 +120,8 @@ class Expression_class : public tree_node {
 public:
    tree_node *copy()		 { return copy_Expression(); }
    virtual Expression copy_Expression() = 0;
-   virtual Type *type_check() = 0;
+   Type *type_check();
+   virtual Type *expr_type_check() = 0;
 
 #ifdef Expression_EXTRAS
    Expression_EXTRAS
@@ -338,7 +339,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Type *type_check();
+   Type *expr_type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -365,7 +366,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Type *type_check();
+   Type *expr_type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -390,7 +391,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Type *type_check();
+   Type *expr_type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -415,7 +416,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Type *type_check();
+   Type *expr_type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -438,7 +439,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Type *type_check();
+   Type *expr_type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -461,7 +462,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Type *type_check();
+   Type *expr_type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -482,7 +483,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Type *type_check();
+   Type *expr_type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -509,7 +510,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Type *type_check();
+   Type *expr_type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -532,7 +533,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Type *type_check();
+   Type *expr_type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -555,7 +556,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Type *type_check();
+   Type *expr_type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -578,7 +579,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Type *type_check();
+   Type *expr_type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -601,7 +602,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Type *type_check();
+   Type *expr_type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -622,7 +623,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Type *type_check();
+   Type *expr_type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -645,7 +646,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Type *type_check();
+   Type *expr_type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -668,7 +669,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Type *type_check();
+   Type *expr_type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -691,7 +692,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Type *type_check();
+   Type *expr_type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -712,7 +713,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Type *type_check();
+   Type *expr_type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -733,7 +734,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Type *type_check();
+   Type *expr_type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -754,7 +755,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Type *type_check();
+   Type *expr_type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -775,7 +776,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Type *type_check();
+   Type *expr_type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -796,7 +797,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Type *type_check();
+   Type *expr_type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -817,7 +818,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Type *type_check();
+   Type *expr_type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -836,7 +837,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Type *type_check();
+   Type *expr_type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -857,7 +858,7 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-   Type *type_check();
+   Type *expr_type_check();
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
