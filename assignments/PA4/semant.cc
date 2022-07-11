@@ -266,11 +266,20 @@ std::map<const char *, PMethodInfo, cmp_str_st> method_table;
 std::map<const char *, std::vector<attr_class *>, cmp_str_st> attr_table;
 std::vector<Type *> all_types_pool; //Use for delete memory
 
+inline void free_memory() {
+    delete class_table;
+    delete symbol_table;
+    std::map<char *, int, cmp_str_st>().swap(_str2id);
+    std::map<const char *, PMethodInfo, cmp_str_st>().swap(method_table);
+    for (auto it = attr_table.begin(); it != attr_table.end(); it++)
+        std::vector<attr_class *>().swap(it->second);
+    std::map<const char *, std::vector<attr_class *>, cmp_str_st>().swap(attr_table);
+    for (Type *type : all_types_pool)
+        if (type != NULL) delete type;
+    std::vector<Type *>().swap(all_types_pool);
+}
 
-int last_expr_id = 0;
-bool last_dispatch_return_self;
-int last_dispatch_id;
-
+bool last_expr_return_self; //True if the last expression is dispatch and returns 'self'
 
 inline void init(Classes classes) {
     class_table = new ClassTable(classes);
@@ -464,8 +473,11 @@ void program_class::semant()
 
     if (class_table->errors()) {
 	cerr << "Compilation halted due to static semantic errors." << endl;
+    free_memory();
 	exit(1);
     }
+
+    free_memory();
 }
 
 bool ClassTable::check_inheritance(Classes classes) {
@@ -563,6 +575,9 @@ bool ClassTable::is_subclassof(const char *sub_class_str, const char *class_str)
         }
         class_id = class2id[class_str];
     }
+
+    if (sub_class_id == class_id)
+        return true;
 
     // bfs check if there is a route from sub_class_id to class_id
     std::queue<int> qq;
@@ -802,8 +817,8 @@ bool method_class::type_check() {
     if (strcmp(return_type->get_string(), "SELF_TYPE") == 0) {
         if (!is_self(expr_type)) {
             if ( ! /* NOT */
-                    (last_expr_id == last_dispatch_id /* last expression in this method is dispatch */
-                    && last_dispatch_return_self /* the dispatch returns 'self' */ )
+                    /* last expression in this method is dispatch */
+                    last_expr_return_self /* and the dispatch returns 'self' */
                ) {
                 
                 class_table->semant_error() << "Line " << line_number << ": in method \'" << name->get_string()
@@ -837,7 +852,7 @@ void formal_class::add_to_symbol_table() {
 }
 
 Type *Expression_class::type_check() {
-    last_expr_id++;
+    last_expr_return_self = false; //init at every expression
     return expr_type_check();
 } 
 
@@ -900,13 +915,11 @@ Type *dispatch_class::expr_type_check() {
             class_table->semant_error() << "Line " << line_number << ": Method \'" << name->get_string() 
                 << "\': incompatible type for argument" << endl;
     }
-    last_dispatch_id = last_expr_id;
     if (strcmp(method_info->return_type->get_string(), "SELF_TYPE") == 0) {
-        last_dispatch_return_self = true;
+        last_expr_return_self = true;
         return caller_type;
     }
     else {
-        last_dispatch_return_self = false;
         return new_type(method_info->return_type, line_number);
     }
 }
@@ -947,13 +960,11 @@ Type *static_dispatch_class::expr_type_check() {
             class_table->semant_error() << "Line " << line_number << ": Method \'" << name->get_string() 
                 << "\': incompatible type for argument" << endl;
     }
-    last_dispatch_id = last_expr_id;
     if (strcmp(method_info->return_type->get_string(), "SELF_TYPE") == 0) {
-        last_dispatch_return_self = true;
+        last_expr_return_self = true;
         return caller_parent_type;
     }
     else {
-        last_dispatch_return_self = false;
         return new_type(method_info->return_type, line_number);
     }
 }
@@ -965,14 +976,19 @@ Type *cond_class::expr_type_check() {
     symbol_table->enterscope();
     Type *then_type = then_exp->type_check();
     symbol_table->exitscope();
+    bool then_is_self = is_self(then_type) || last_expr_return_self;
 
     symbol_table->enterscope();
     Type *else_type = else_exp->type_check();
     symbol_table->exitscope();
+    bool else_is_self = is_self(else_type) || last_expr_return_self;
+
+    last_expr_return_self = then_is_self && else_is_self;
 
     Type *lca_type = class_table->lca(then_type, else_type);
 
-    if (lca_type == NULL) {
+    if (lca_type == NULL) { 
+        //This will not happen
         class_table->semant_error() << "Line " << line_number << ": \'if\' condition: "
             << "mismatching of \'then\' and \'else\' expression" << endl;
         return then_type;
@@ -992,10 +1008,13 @@ Type *loop_class::expr_type_check() {
 
 Type *typcase_class::expr_type_check() {
     Type *expr_type = expr->type_check();
+    bool branches_are_self = true;
     for (int i = cases->first(); cases->more(i); i = cases->next(i)) {
         branch_class *branch = (branch_class *)cases->nth(i);
-        branch->type_check();
+        Type *br_type = branch->type_check();
+        if ( ! (is_self(br_type) || last_expr_return_self)) branches_are_self = false;
     }
+    last_expr_return_self = branches_are_self;
     return expr_type;
 }
 
